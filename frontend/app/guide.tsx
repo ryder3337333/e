@@ -70,7 +70,7 @@ export default function Guide() {
           {section === 'mechanics' && (
             <View testID="guide-mechanics">
               <View style={styles.heroRow}>
-                <Image source={{ uri: theme.media.mace }} style={styles.heroIcon} resizeMode="contain" />
+                <Image source={theme.media.mace} style={styles.heroIcon} resizeMode="contain" />
                 <Text style={styles.h1}>MACE MECHANICS</Text>
               </View>
               {MECHANICS.map((m, i) => (

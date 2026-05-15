@@ -78,7 +78,7 @@ export default function Home() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.gold} />}
         >
           <View style={styles.hero} testID="home-hero">
-            <Image source={{ uri: theme.media.mace }} style={styles.heroIcon} resizeMode="contain" />
+            <Image source={theme.media.mace} style={styles.heroIcon} resizeMode="contain" />
             <View style={{ flex: 1, marginLeft: theme.spacing.md }}>
               <Text style={styles.title}>MACE FORGE</Text>
               <Text style={styles.subtitle}>1.21+ Mace PvP Hub</Text>

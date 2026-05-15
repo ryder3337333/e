@@ -80,7 +80,7 @@ export default function ChatScreen() {
         style={styles.bg} imageStyle={{ opacity: 0.12 }}>
         <View style={styles.headerBar}>
           <View style={styles.headerRow}>
-            <Image source={{ uri: theme.media.mace }} style={styles.headerIcon} resizeMode="contain" />
+            <Image source={theme.media.mace} style={styles.headerIcon} resizeMode="contain" />
             <View>
               <Text style={styles.h1}>MACECOACH AI</Text>
               <Text style={styles.subTxt}>Tactical PvP Mentor</Text>

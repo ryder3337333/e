@@ -69,7 +69,7 @@ export default function LoadoutScreen() {
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView contentContainerStyle={styles.content}>
             <View style={styles.heroRow}>
-              <Image source={{ uri: theme.media.mace }} style={styles.heroIcon} resizeMode="contain" />
+              <Image source={theme.media.mace} style={styles.heroIcon} resizeMode="contain" />
               <Text style={styles.h1}>LOADOUT FORGE</Text>
             </View>
 
