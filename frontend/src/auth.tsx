@@ -19,13 +19,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const logout = async () => {
+    await storage.removeItem(TOKEN_KEY);
+    setUser(null);
+  };
+
   const refresh = useCallback(async () => {
     try {
       const me = await api<User>('/auth/me');
       setUser(me);
-    } catch {
-      await storage.removeItem(TOKEN_KEY);
-      setUser(null);
+    } catch (e: any) {
+      if (e?.status === 401) {
+        await storage.removeItem(TOKEN_KEY);
+        setUser(null);
+      }
     }
   }, []);
 

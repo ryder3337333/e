@@ -116,7 +116,7 @@ export default function Home() {
             </Text>
           </View>
 
-          <TouchableOpacity testID="logout-btn" onPress={logout} style={styles.logoutBtn}>
+          <TouchableOpacity testID="logout-btn" onPress={async () => { await logout(); router.replace('/login'); }} style={styles.logoutBtn}>
             <Ionicons name="log-out-outline" size={18} color={theme.colors.redstone} />
             <Text style={styles.logoutTxt}>LOG OUT</Text>
           </TouchableOpacity>
