@@ -1,78 +1,61 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Image, TouchableOpacity, ImageBackground,
-  RefreshControl, ActivityIndicator,
+  RefreshControl, ActivityIndicator, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { theme, API_URL } from '@/src/theme';
-import { getDeviceId } from '@/src/device';
+import { theme } from '@/src/theme';
+import { api } from '@/src/api';
+import { useAuth } from '@/src/auth';
 
 type Stats = { kills: number; deaths: number; kdr: number; streak: number };
 
 export default function Home() {
   const router = useRouter();
-  const [deviceId, setDeviceId] = useState<string>('');
+  const { user, logout } = useAuth();
   const [stats, setStats] = useState<Stats>({ kills: 0, deaths: 0, kdr: 0, streak: 0 });
+  const [unread, setUnread] = useState(0);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
-  const loadStats = useCallback(async (id: string) => {
+  const loadAll = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/stats?device_id=${id}`);
-      const data = await res.json();
-      setStats({ kills: data.kills, deaths: data.deaths, kdr: data.kdr, streak: data.streak });
+      const [s, n] = await Promise.all([
+        api<Stats>('/stats'),
+        api<{ count: number }>('/notifications/unread-count'),
+      ]);
+      setStats(s);
+      setUnread(n.count);
     } catch (e) { console.warn(e); }
   }, []);
 
-  useEffect(() => {
-    (async () => {
-      const id = await getDeviceId();
-      setDeviceId(id);
-      await loadStats(id);
-    })();
-  }, [loadStats]);
+  useEffect(() => { loadAll(); }, [loadAll]);
 
   const log = async (kind: 'kill' | 'death') => {
-    if (!deviceId) return;
     setLoading(true);
     try {
-      const res = await fetch(`${API_URL}/stats/log`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ device_id: deviceId, kind }),
-      });
-      const data = await res.json();
-      setStats({ kills: data.kills, deaths: data.deaths, kdr: data.kdr, streak: data.streak });
-    } catch (e) { console.warn(e); }
+      const s = await api<Stats>('/stats/log', { method: 'POST', body: { kind } });
+      setStats(s);
+    } catch (e: any) { Alert.alert('Error', e?.message || 'Failed'); }
     setLoading(false);
   };
 
   const reset = async () => {
-    if (!deviceId) return;
-    await fetch(`${API_URL}/stats/reset`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ device_id: deviceId, kind: 'kill' }),
-    });
-    await loadStats(deviceId);
+    await api('/stats/reset', { method: 'POST', body: {} });
+    await loadAll();
   };
 
   const onRefresh = async () => {
     setRefreshing(true);
-    if (deviceId) await loadStats(deviceId);
+    await loadAll();
     setRefreshing(false);
   };
 
   return (
     <SafeAreaView style={styles.safe} edges={['left', 'right']} testID="home-screen">
-      <ImageBackground
-        source={{ uri: theme.media.stone }}
-        resizeMode="repeat"
-        style={styles.bg}
-        imageStyle={{ opacity: 0.18 }}
-      >
+      <ImageBackground source={{ uri: theme.media.stone }} resizeMode="repeat" style={styles.bg} imageStyle={{ opacity: 0.18 }}>
         <ScrollView
           contentContainerStyle={styles.container}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.gold} />}
@@ -81,8 +64,16 @@ export default function Home() {
             <Image source={theme.media.mace} style={styles.heroIcon} resizeMode="contain" />
             <View style={{ flex: 1, marginLeft: theme.spacing.md }}>
               <Text style={styles.title}>MACE FORGE</Text>
-              <Text style={styles.subtitle}>1.21+ Mace PvP Hub</Text>
+              <Text style={styles.subtitle}>HELLO, {user?.username?.toUpperCase()}</Text>
             </View>
+            <TouchableOpacity testID="bell-btn" onPress={() => router.push('/notifications')} style={styles.bell}>
+              <Ionicons name="notifications" size={22} color={theme.colors.gold} />
+              {unread > 0 && (
+                <View style={styles.badge} testID="unread-badge">
+                  <Text style={styles.badgeText}>{unread > 9 ? '9+' : unread}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
           </View>
 
           <View style={styles.statsCard} testID="home-stats">
@@ -111,6 +102,8 @@ export default function Home() {
           <View style={styles.grid}>
             <Tile icon="book" label="GUIDE" testID="tile-guide" onPress={() => router.push('/guide')} />
             <Tile icon="hammer" label="LOADOUTS" testID="tile-loadout" onPress={() => router.push('/loadout')} />
+            <Tile icon="calculator" label="DPS CALC" testID="tile-dps" onPress={() => router.push('/dps')} />
+            <Tile icon="trophy" label="LEADERBOARD" testID="tile-leaderboard" onPress={() => router.push('/leaderboard')} />
             <Tile icon="chatbubbles" label="FORUM" testID="tile-forum" onPress={() => router.push('/forum')} />
             <Tile icon="sparkles" label="AI COACH" testID="tile-chat" onPress={() => router.push('/chat')} />
           </View>
@@ -122,6 +115,11 @@ export default function Home() {
               full-armor kills. Pair with Feather Falling IV boots to survive the landing.
             </Text>
           </View>
+
+          <TouchableOpacity testID="logout-btn" onPress={logout} style={styles.logoutBtn}>
+            <Ionicons name="log-out-outline" size={18} color={theme.colors.redstone} />
+            <Text style={styles.logoutTxt}>LOG OUT</Text>
+          </TouchableOpacity>
         </ScrollView>
       </ImageBackground>
     </SafeAreaView>
@@ -137,17 +135,10 @@ function Stat({ label, value, color, testID }: { label: string; value: number; c
   );
 }
 
-function ActionButton({ label, color, borderColor, onPress, disabled, testID }: {
-  label: string; color: string; borderColor: string; onPress: () => void; disabled?: boolean; testID: string;
-}) {
+function ActionButton({ label, color, borderColor, onPress, disabled, testID }: any) {
   return (
-    <TouchableOpacity
-      testID={testID}
-      activeOpacity={0.7}
-      onPress={onPress}
-      disabled={disabled}
-      style={[styles.btn, { backgroundColor: color, borderColor, opacity: disabled ? 0.6 : 1 }]}
-    >
+    <TouchableOpacity testID={testID} activeOpacity={0.7} onPress={onPress} disabled={disabled}
+      style={[styles.btn, { backgroundColor: color, borderColor, opacity: disabled ? 0.6 : 1 }]}>
       <Text style={styles.btnText}>{label}</Text>
     </TouchableOpacity>
   );
@@ -167,14 +158,16 @@ const styles = StyleSheet.create({
   bg: { flex: 1, backgroundColor: theme.colors.bg },
   container: { padding: theme.spacing.md, paddingBottom: theme.spacing.xl },
   hero: { flexDirection: 'row', alignItems: 'center', backgroundColor: theme.colors.dirtDark,
-    borderColor: theme.colors.borderDark, borderWidth: 4, padding: theme.spacing.md,
-    marginBottom: theme.spacing.md },
+    borderColor: theme.colors.borderDark, borderWidth: 4, padding: theme.spacing.md, marginBottom: theme.spacing.md },
   heroIcon: { width: 64, height: 64 },
   title: { fontFamily: theme.font, fontSize: 24, fontWeight: 'bold', color: theme.colors.gold,
-    textTransform: 'uppercase', letterSpacing: 2,
-    textShadowColor: '#000', textShadowOffset: { width: 2, height: 2 }, textShadowRadius: 0 },
-  subtitle: { fontFamily: theme.font, fontSize: 12, color: theme.colors.textSecondary,
-    textTransform: 'uppercase', marginTop: 4 },
+    textTransform: 'uppercase', letterSpacing: 2, textShadowColor: '#000', textShadowOffset: { width: 2, height: 2 } },
+  subtitle: { fontFamily: theme.font, fontSize: 11, color: theme.colors.emerald,
+    textTransform: 'uppercase', marginTop: 4, letterSpacing: 1 },
+  bell: { padding: 8, position: 'relative' },
+  badge: { position: 'absolute', top: 0, right: 0, backgroundColor: theme.colors.redstone,
+    borderColor: '#000', borderWidth: 2, minWidth: 20, height: 20, paddingHorizontal: 3, justifyContent: 'center', alignItems: 'center' },
+  badgeText: { fontFamily: theme.font, fontSize: 10, color: '#fff', fontWeight: 'bold' },
   statsCard: { backgroundColor: theme.colors.stoneDark, borderColor: theme.colors.borderDark,
     borderWidth: 4, padding: theme.spacing.md, marginBottom: theme.spacing.md },
   cardHeader: { fontFamily: theme.font, fontSize: 14, fontWeight: 'bold', color: theme.colors.gold,
@@ -202,4 +195,8 @@ const styles = StyleSheet.create({
   tipCard: { backgroundColor: theme.colors.nether, borderColor: '#2a0808', borderWidth: 4,
     padding: theme.spacing.md, marginTop: theme.spacing.sm },
   body: { fontFamily: theme.font, fontSize: 13, color: theme.colors.text, lineHeight: 20 },
+  logoutBtn: { flexDirection: 'row', alignSelf: 'center', alignItems: 'center', gap: 6,
+    marginTop: theme.spacing.lg, padding: 10 },
+  logoutTxt: { fontFamily: theme.font, fontSize: 12, color: theme.colors.redstone,
+    textTransform: 'uppercase', letterSpacing: 1, fontWeight: 'bold' },
 });

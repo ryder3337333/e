@@ -1,7 +1,13 @@
-"""Backend pytest suite for Mace PvP API.
+"""Backend pytest suite for Mace PvP API (JWT Auth migration).
 
-Covers: root, stats (log/get/reset), forum (CRUD + comments + likes),
-loadouts (create/list/delete), and AI chat (Claude Sonnet 4.5 + history).
+Covers:
+- Auth: signup/login/me + duplicate/invalid validations
+- Public endpoints (forum list, leaderboard) reachable without token
+- Protected endpoints reject 401 without token, succeed with valid bearer
+- Forum: author matches authenticated user.username
+- Loadouts/Stats are scoped per user (cross-user isolation)
+- Chat: Claude reply + per-user history
+- Notifications: created when user B comments on user A's post
 """
 import os
 import time
@@ -9,8 +15,14 @@ import uuid
 import pytest
 import requests
 
-BASE_URL = "https://pvp-mace-forge.preview.emergentagent.com"
+BASE_URL = os.environ.get(
+    "EXPO_PUBLIC_BACKEND_URL", "https://pvp-mace-forge.preview.emergentagent.com"
+).rstrip("/")
 API = f"{BASE_URL}/api"
+
+
+def _rand(prefix: str = "u") -> str:
+    return f"TEST_{prefix}_{uuid.uuid4().hex[:8]}"
 
 
 @pytest.fixture(scope="module")
@@ -21,8 +33,27 @@ def s():
 
 
 @pytest.fixture(scope="module")
-def device_id():
-    return f"TEST_dev_{uuid.uuid4().hex[:8]}"
+def user_a(s):
+    uname = _rand("ua")
+    payload = {"email": f"{uname}@test.com", "username": uname, "password": "secret123"}
+    r = s.post(f"{API}/auth/signup", json=payload)
+    assert r.status_code == 200, r.text
+    d = r.json()
+    return {"token": d["token"], "user": d["user"], "password": payload["password"]}
+
+
+@pytest.fixture(scope="module")
+def user_b(s):
+    uname = _rand("ub")
+    payload = {"email": f"{uname}@test.com", "username": uname, "password": "secret123"}
+    r = s.post(f"{API}/auth/signup", json=payload)
+    assert r.status_code == 200, r.text
+    d = r.json()
+    return {"token": d["token"], "user": d["user"], "password": payload["password"]}
+
+
+def H(u):
+    return {"Authorization": f"Bearer {u['token']}"}
 
 
 # ---------- Root ----------
@@ -33,172 +64,237 @@ class TestRoot:
         assert "message" in r.json()
 
 
-# ---------- Stats ----------
-class TestStats:
-    def test_reset_initial(self, s, device_id):
-        r = s.post(f"{API}/stats/reset", json={"device_id": device_id, "kind": "kill"})
-        assert r.status_code == 200
+# ---------- Auth: signup ----------
+class TestSignup:
+    def test_signup_success(self, s):
+        uname = _rand("new")
+        r = s.post(f"{API}/auth/signup", json={
+            "email": f"{uname}@test.com", "username": uname, "password": "secret123"
+        })
+        assert r.status_code == 200, r.text
+        d = r.json()
+        assert "token" in d and isinstance(d["token"], str) and len(d["token"]) > 10
+        assert d["user"]["username"] == uname
+        assert d["user"]["email"] == f"{uname}@test.com".lower()
+        assert "id" in d["user"]
 
-    def test_log_kill_increments(self, s, device_id):
-        r = s.post(f"{API}/stats/log", json={"device_id": device_id, "kind": "kill"})
+    def test_signup_duplicate_email(self, s, user_a):
+        # same email, new username -> 400 email already registered
+        r = s.post(f"{API}/auth/signup", json={
+            "email": user_a["user"]["email"],
+            "username": _rand("diff"),
+            "password": "secret123",
+        })
+        assert r.status_code == 400
+        assert "Email already registered" in r.json().get("detail", "")
+
+    def test_signup_duplicate_username_case_insensitive(self, s, user_a):
+        # new email, same username (different case) -> 400 username taken
+        uname_upper = user_a["user"]["username"].upper()
+        r = s.post(f"{API}/auth/signup", json={
+            "email": f"new_{uuid.uuid4().hex[:6]}@test.com",
+            "username": uname_upper,
+            "password": "secret123",
+        })
+        assert r.status_code == 400
+        assert "Username already taken" in r.json().get("detail", "")
+
+    def test_signup_invalid_email_422(self, s):
+        r = s.post(f"{API}/auth/signup", json={
+            "email": "not-an-email", "username": _rand("e"), "password": "secret123"
+        })
+        assert r.status_code == 422
+
+    def test_signup_short_username_422(self, s):
+        r = s.post(f"{API}/auth/signup", json={
+            "email": f"{_rand('s')}@test.com", "username": "ab", "password": "secret123"
+        })
+        assert r.status_code == 422
+
+    def test_signup_invalid_username_chars_422(self, s):
+        r = s.post(f"{API}/auth/signup", json={
+            "email": f"{_rand('s')}@test.com", "username": "bad name!", "password": "secret123"
+        })
+        assert r.status_code == 422
+
+
+# ---------- Auth: login + me ----------
+class TestLoginMe:
+    def test_login_success(self, s, user_a):
+        r = s.post(f"{API}/auth/login", json={
+            "email": user_a["user"]["email"], "password": user_a["password"]
+        })
         assert r.status_code == 200
         d = r.json()
-        assert d["kills"] == 1 and d["deaths"] == 0
-        assert d["streak"] == 1
+        assert "token" in d
+        assert d["user"]["id"] == user_a["user"]["id"]
 
-    def test_log_death_increments(self, s, device_id):
-        r = s.post(f"{API}/stats/log", json={"device_id": device_id, "kind": "death"})
+    def test_login_wrong_password(self, s, user_a):
+        r = s.post(f"{API}/auth/login", json={
+            "email": user_a["user"]["email"], "password": "wrongpass!"
+        })
+        assert r.status_code == 401
+        assert "Invalid email or password" in r.json().get("detail", "")
+
+    def test_me_without_token_401(self, s):
+        r = s.get(f"{API}/auth/me")
+        assert r.status_code == 401
+
+    def test_me_with_token(self, s, user_a):
+        r = s.get(f"{API}/auth/me", headers=H(user_a))
+        assert r.status_code == 200
+        assert r.json()["id"] == user_a["user"]["id"]
+        assert r.json()["username"] == user_a["user"]["username"]
+
+
+# ---------- Public endpoints ----------
+class TestPublic:
+    def test_forum_list_public(self, s):
+        r = s.get(f"{API}/forum/posts")
+        assert r.status_code == 200
+        assert isinstance(r.json(), list)
+
+    def test_leaderboard_public(self, s):
+        r = s.get(f"{API}/leaderboard/weekly")
+        assert r.status_code == 200
+        assert isinstance(r.json(), list)
+
+
+# ---------- Protected endpoints reject without token ----------
+class TestProtectedAuthRequired:
+    @pytest.mark.parametrize("method,path,body", [
+        ("POST", "/forum/posts", {"title": "x", "body": "y"}),
+        ("POST", "/loadouts", {"name": "x"}),
+        ("POST", "/stats/log", {"kind": "kill"}),
+        ("POST", "/chat", {"message": "hi"}),
+        ("GET", "/loadouts", None),
+        ("GET", "/stats", None),
+        ("GET", "/notifications", None),
+    ])
+    def test_unauthed_401(self, s, method, path, body):
+        if method == "POST":
+            r = s.post(f"{API}{path}", json=body)
+        else:
+            r = s.get(f"{API}{path}")
+        assert r.status_code == 401, f"{method} {path} expected 401, got {r.status_code}"
+
+
+# ---------- Forum: author = authenticated user.username ----------
+class TestForumAuth:
+    def test_create_post_uses_authed_user(self, s, user_a):
+        r = s.post(f"{API}/forum/posts", headers=H(user_a),
+                   json={"title": "TEST_authpost", "body": "auth body"})
         assert r.status_code == 200
         d = r.json()
-        assert d["kills"] == 1 and d["deaths"] == 1
-        assert d["streak"] == 0
-        assert d["kdr"] == 1.0
+        assert d["author"] == user_a["user"]["username"]
+        assert d["user_id"] == user_a["user"]["id"]
 
-    def test_get_stats_summary(self, s, device_id):
-        r = s.get(f"{API}/stats", params={"device_id": device_id})
+    def test_create_post_with_media(self, s, user_a):
+        r = s.post(f"{API}/forum/posts", headers=H(user_a), json={
+            "title": "TEST_media", "body": "b",
+            "media_url": "https://x/y.png", "media_type": "image"
+        })
         assert r.status_code == 200
-        d = r.json()
-        assert d["device_id"] == device_id
-        assert d["kills"] == 1 and d["deaths"] == 1
+        assert r.json()["media_type"] == "image"
 
-    def test_invalid_kind_400(self, s, device_id):
-        r = s.post(f"{API}/stats/log", json={"device_id": device_id, "kind": "wat"})
+
+# ---------- Loadouts: per-user scoping ----------
+class TestLoadoutsScoping:
+    def test_user_a_creates_loadout(self, s, user_a):
+        r = s.post(f"{API}/loadouts", headers=H(user_a), json={
+            "name": "TEST_A_build", "enchantments": ["Density V"], "armor": ["Netherite Helmet"]
+        })
+        assert r.status_code == 200
+        TestLoadoutsScoping.a_loadout_id = r.json()["id"]
+
+    def test_user_b_cannot_see_a_loadouts(self, s, user_b):
+        r = s.get(f"{API}/loadouts", headers=H(user_b))
+        assert r.status_code == 200
+        ids = [lo["id"] for lo in r.json()]
+        assert TestLoadoutsScoping.a_loadout_id not in ids
+
+    def test_user_a_sees_own(self, s, user_a):
+        r = s.get(f"{API}/loadouts", headers=H(user_a))
+        ids = [lo["id"] for lo in r.json()]
+        assert TestLoadoutsScoping.a_loadout_id in ids
+
+    def test_user_b_cannot_delete_a_loadout(self, s, user_b):
+        r = s.delete(f"{API}/loadouts/{TestLoadoutsScoping.a_loadout_id}", headers=H(user_b))
+        assert r.status_code == 404  # scoped delete returns 404
+
+
+# ---------- Stats: per-user scoping ----------
+class TestStatsScoping:
+    def test_a_logs_kill(self, s, user_a):
+        r = s.post(f"{API}/stats/log", headers=H(user_a), json={"kind": "kill"})
+        assert r.status_code == 200
+        assert r.json()["kills"] >= 1
+
+    def test_b_stats_separate(self, s, user_b):
+        r = s.get(f"{API}/stats", headers=H(user_b))
+        assert r.status_code == 200
+        # user_b has not logged any kill -> 0
+        assert r.json()["kills"] == 0
+
+    def test_invalid_kind_400(self, s, user_a):
+        r = s.post(f"{API}/stats/log", headers=H(user_a), json={"kind": "nope"})
         assert r.status_code == 400
 
-    def test_reset_clears(self, s, device_id):
-        s.post(f"{API}/stats/reset", json={"device_id": device_id, "kind": "kill"})
-        r = s.get(f"{API}/stats", params={"device_id": device_id})
-        d = r.json()
-        assert d["kills"] == 0 and d["deaths"] == 0
 
-
-# ---------- Forum ----------
-class TestForum:
-    post_id = None
-
-    def test_create_post(self, s):
-        payload = {"author": "TEST_user", "title": "TEST_Mace tips", "body": "Density 5 stack"}
-        r = s.post(f"{API}/forum/posts", json=payload)
-        assert r.status_code == 200
-        d = r.json()
-        assert d["title"] == payload["title"]
-        assert d["likes"] == 0 and d["comments_count"] == 0
-        assert "id" in d
-        TestForum.post_id = d["id"]
-
-    def test_list_posts_contains(self, s):
-        r = s.get(f"{API}/forum/posts")
-        assert r.status_code == 200
-        ids = [p["id"] for p in r.json()]
-        assert TestForum.post_id in ids
-
-    def test_like_increments(self, s):
-        r = s.post(f"{API}/forum/posts/{TestForum.post_id}/like")
-        assert r.status_code == 200
-        assert r.json()["likes"] == 1
-        r2 = s.post(f"{API}/forum/posts/{TestForum.post_id}/like")
-        assert r2.json()["likes"] == 2
-
-    def test_add_comment(self, s):
-        r = s.post(
-            f"{API}/forum/posts/{TestForum.post_id}/comments",
-            json={"author": "TEST_commenter", "text": "nice build"},
-        )
-        assert r.status_code == 200
-        d = r.json()
-        assert d["text"] == "nice build"
-        assert d["post_id"] == TestForum.post_id
-
-    def test_list_comments(self, s):
-        r = s.get(f"{API}/forum/posts/{TestForum.post_id}/comments")
-        assert r.status_code == 200
-        comments = r.json()
-        assert len(comments) >= 1
-
-    def test_post_comments_count_incremented(self, s):
-        r = s.get(f"{API}/forum/posts")
-        post = next(p for p in r.json() if p["id"] == TestForum.post_id)
-        assert post["comments_count"] >= 1
-
-    def test_like_unknown_404(self, s):
-        r = s.post(f"{API}/forum/posts/nonexistent-id/like")
-        assert r.status_code == 404
-
-    def test_comment_on_unknown_404(self, s):
-        r = s.post(f"{API}/forum/posts/nonexistent-id/comments",
-                   json={"author": "x", "text": "y"})
-        assert r.status_code == 404
-
-
-# ---------- Loadouts ----------
-class TestLoadouts:
-    loadout_id = None
-
-    def test_create_loadout(self, s, device_id):
-        payload = {
-            "device_id": device_id,
-            "name": "TEST_Smash Build",
-            "enchantments": ["Density V", "Breach IV", "Wind Burst III"],
-            "armor": ["Netherite Helmet", "Elytra"],
-            "notes": "fall stack",
-        }
-        r = s.post(f"{API}/loadouts", json=payload)
-        assert r.status_code == 200
-        d = r.json()
-        assert d["name"] == payload["name"]
-        assert "Density V" in d["enchantments"]
-        TestLoadouts.loadout_id = d["id"]
-
-    def test_list_loadouts(self, s, device_id):
-        r = s.get(f"{API}/loadouts", params={"device_id": device_id})
-        assert r.status_code == 200
-        ids = [l["id"] for l in r.json()]
-        assert TestLoadouts.loadout_id in ids
-
-    def test_delete_loadout(self, s, device_id):
-        r = s.delete(f"{API}/loadouts/{TestLoadouts.loadout_id}")
-        assert r.status_code == 200
-        # verify gone
-        r2 = s.get(f"{API}/loadouts", params={"device_id": device_id})
-        ids = [l["id"] for l in r2.json()]
-        assert TestLoadouts.loadout_id not in ids
-
-    def test_delete_unknown_404(self, s):
-        r = s.delete(f"{API}/loadouts/nonexistent")
-        assert r.status_code == 404
-
-
-# ---------- Chat (Claude Sonnet 4.5) ----------
+# ---------- Chat (Claude) + per-user history ----------
 class TestChat:
-    session_id = f"TEST_sess_{uuid.uuid4().hex[:8]}"
-
-    def test_chat_reply(self, s):
-        r = s.post(
-            f"{API}/chat",
-            json={"session_id": TestChat.session_id, "message": "In one sentence: what does Density do?"},
-            timeout=60,
-        )
+    def test_chat_reply(self, s, user_a):
+        r = s.post(f"{API}/chat", headers=H(user_a),
+                   json={"message": "In one sentence: what does Density do?"}, timeout=90)
         assert r.status_code == 200, r.text
         d = r.json()
-        assert d["session_id"] == TestChat.session_id
         assert isinstance(d["reply"], str) and len(d["reply"]) > 0
+        TestChat.session_id = d["session_id"]
 
-    def test_chat_multi_turn_history(self, s):
-        r = s.post(
-            f"{API}/chat",
-            json={"session_id": TestChat.session_id, "message": "And Breach in one sentence?"},
-            timeout=60,
-        )
-        assert r.status_code == 200, r.text
+    def test_history_scoped_to_user(self, s, user_a, user_b):
         time.sleep(1)
-        h = s.get(f"{API}/chat/{TestChat.session_id}")
-        assert h.status_code == 200
-        msgs = h.json()
-        # 2 user + 2 assistant = 4 messages minimum
-        assert len(msgs) >= 4
-        roles = [m["role"] for m in msgs]
-        assert roles.count("user") >= 2 and roles.count("assistant") >= 2
+        # user_a sees own history
+        r = s.get(f"{API}/chat/{TestChat.session_id}", headers=H(user_a))
+        assert r.status_code == 200
+        assert len(r.json()) >= 2
+        # user_b sees nothing under user_a's session
+        r2 = s.get(f"{API}/chat/{TestChat.session_id}", headers=H(user_b))
+        assert r2.status_code == 200
+        assert r2.json() == []
 
-    def test_chat_empty_message_400(self, s):
-        r = s.post(f"{API}/chat", json={"session_id": TestChat.session_id, "message": "   "})
-        assert r.status_code == 400
+
+# ---------- Notifications: user B comments -> user A gets notification ----------
+class TestNotifications:
+    def test_notification_on_comment(self, s, user_a, user_b):
+        # user A creates a post
+        rp = s.post(f"{API}/forum/posts", headers=H(user_a),
+                    json={"title": "TEST_notif_post", "body": "x"})
+        assert rp.status_code == 200
+        post_id = rp.json()["id"]
+
+        # user B comments
+        rc = s.post(f"{API}/forum/posts/{post_id}/comments", headers=H(user_b),
+                    json={"text": "TEST_notif_comment"})
+        assert rc.status_code == 200
+
+        # user A fetches notifications -> sees one
+        time.sleep(0.5)
+        rn = s.get(f"{API}/notifications", headers=H(user_a))
+        assert rn.status_code == 200
+        notifs = rn.json()
+        match = [n for n in notifs if n["post_id"] == post_id]
+        assert len(match) >= 1
+        assert match[0]["actor"] == user_b["user"]["username"]
+        assert match[0]["kind"] == "comment"
+
+    def test_no_self_notification(self, s, user_a):
+        # user A comments on own post -> no extra notification
+        rp = s.post(f"{API}/forum/posts", headers=H(user_a),
+                    json={"title": "TEST_self_post", "body": "x"})
+        post_id = rp.json()["id"]
+        before = s.get(f"{API}/notifications", headers=H(user_a)).json()
+        s.post(f"{API}/forum/posts/{post_id}/comments", headers=H(user_a),
+               json={"text": "self comment"})
+        after = s.get(f"{API}/notifications", headers=H(user_a)).json()
+        # No new notif for self-comment
+        assert len(after) == len(before)

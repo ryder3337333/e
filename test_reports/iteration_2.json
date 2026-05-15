@@ -1,0 +1,46 @@
+{
+  "summary": "Full re-test after JWT/email auth migration. Backend: 33/33 pytest cases pass — signup (success + duplicate email/username + invalid email/short username/invalid chars), login (success + wrong-pwd 401), /auth/me (401 w/o token, 200 w/ token), all 7 protected endpoints reject 401 w/o token & succeed w/ Bearer (parametrized), forum post author=authed username, loadouts/stats per-user scoping (user B cannot see/delete user A's data), real Claude Sonnet 4.5 chat reply, per-user chat history isolation, notification created when user B comments on user A's post, no self-notification on own-post comment. Frontend (mobile 390x844): first load gates to login → signup creates account & redirects to home; home greets with username, stats show 0/0/0/0 then +KILL increments to 1 kill / 1 streak; tabs (home/guide/loadout/forum/chat) navigate; tile-dps/tile-leaderboard/bell-btn open dps-screen/leaderboard-screen/notifications-screen; loadout save adds build to list; forum composer creates post with author=current user (rendered uppercased as 'BY {USERNAME}'); login wrong password shows 'Invalid email or password'; correct password returns to home; AI Coach chat-screen renders with 4 suggestion chips.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "auth gate / logout flow",
+        "issue": "After tapping logout-btn on home, the user sees the login-screen route mount but the previous (tabs) layer is still visible/intercepting in the DOM for ~3+ seconds. is_visible('login-screen')=False right after logout; reloading or waiting longer reveals it. After reload it works fine. login-email selector resolves to 2 nodes (stale signup screen + login screen both mounted). Cosmetic on web, but user may briefly see the wrong screen.",
+        "testID": "logout-btn / login-screen",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "global", "issues": [
+        "React Native console warnings (non-blocking): 'textShadow*' deprecated → use 'textShadow'; props.pointerEvents deprecated → use style.pointerEvents. Already noted in iteration_1; still present."
+      ]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Optional: after logout, call router.replace('/login') explicitly (currently relies on the segment effect in _layout, which leaves prior tabs route mounted on web until a re-render). Forces immediate transition and avoids duplicate testID nodes in DOM.",
+    "Optional: migrate textShadow*, props.pointerEvents, Image style.resizeMode to non-deprecated APIs.",
+    "Optional: persist mapping from server-cased username to client display — current cards render 'BY {USERNAME.toUpperCase()}', which is intentional but can confuse case-sensitive search/assertions."
+  ],
+  "critical_code_review_comments": [
+    "server.py:78 in-memory brute-force tracker (_attempts dict) won't survive a uvicorn reload and isn't shared across workers; acceptable for now but should move to Redis/Mongo TTL for production.",
+    "server.py:307 chat session_id defaults to f's_{user.id}' — single shared session per user means a user cannot have multiple parallel chat threads. Acceptable per current UX.",
+    "server.py:317 LLM model is hard-coded; consider env var for model swap.",
+    "server.py uses passlib bcrypt: backend.err.log shows the (harmless) 'AttributeError: module bcrypt has no attribute __about__' warning. Hash/verify still works (33/33 tests pass) — passlib trapped it. Could be silenced by pinning bcrypt<4.1 or upgrading passlib.",
+    "server.py auth/me & all protected routes correctly exclude password_hash via projection. Good.",
+    "frontend/src/api.ts attaches Bearer only when opts.auth !== false — clean.",
+    "frontend/src/auth.tsx: refresh() silently clears token on any /auth/me failure (incl. transient 5xx). Could over-aggressively log user out on network blips. Consider only clearing on 401."
+  ],
+  "updated_files": ["/app/backend/tests/backend_test.py"],
+  "success_rate": {"backend": "100% (33/33)", "frontend": "~95% (all core auth+nav+CRUD flows verified; only the post-logout DOM transition is wobbly on web)"},
+  "seed_data_creation": "Pytest fixtures create 2 TEST_ua/TEST_ub users + several TEST_-prefixed posts/loadouts/notifications per run; UI run creates 1 user (uibXXXXXX) + 1 TEST_uipost forum post + 1 TEST_UI_LO loadout. All data is namespaced with TEST_ prefix where possible — safe to leave in DB.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "BASE_URL=https://pvp-mace-forge.preview.emergentagent.com. Frontend env key is EXPO_PUBLIC_BACKEND_URL (not EXPO_BACKEND_URL). Token stored under 'mace_token' in @/src/utils/storage. Backend bcrypt warning in logs is harmless. testIDs verified working: go-signup, signup-{email,username,password,submit,error}, login-{email,password,submit,error}, home-screen, home-stats, log-{kill,death}-btn, logout-btn, bell-btn, tile-{guide,loadout,dps,leaderboard,forum,chat}, tab-{home,guide,loadout,forum,chat}, forum-screen, open-composer-btn, composer-{title,body}, submit-post-btn, loadout-screen, loadout-name-input, save-loadout-btn, dps-screen, dps-result, leaderboard-screen, notifications-screen, chat-screen. Note: post cards render author uppercased ('BY {AUTHOR}'); case-insensitive text checks recommended.",
+  "rca_of_issue": "Logout DOM stale: Expo Router web keeps prior route mounted during transition; auth gate in _layout.tsx (segment effect → router.replace) fires only after user state changes propagate. Result: duplicate testID nodes for the 1-2s transition window. Mitigation: explicit await router.replace('/login') inside logout() in auth.tsx, or unmount tabs group on user=null."
+}

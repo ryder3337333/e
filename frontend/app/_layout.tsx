@@ -1,82 +1,54 @@
-import { Tabs } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { useEffect } from 'react';
+import { Stack, useRouter, useSegments } from 'expo-router';
+import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { AuthProvider, useAuth } from '@/src/auth';
 import { theme } from '@/src/theme';
-import { Platform } from 'react-native';
+
+function Gate({ children }: { children: React.ReactNode }) {
+  const { user, loading } = useAuth();
+  const segments = useSegments();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (loading) return;
+    const inAuthGroup = segments[0] === 'login' || segments[0] === 'signup';
+    if (!user && !inAuthGroup) {
+      router.replace('/login');
+    } else if (user && inAuthGroup) {
+      router.replace('/');
+    }
+  }, [user, loading, segments, router]);
+
+  if (loading) {
+    return (
+      <View style={styles.center} testID="boot-loader">
+        <ActivityIndicator size="large" color={theme.colors.gold} />
+      </View>
+    );
+  }
+  return <>{children}</>;
+}
 
 export default function RootLayout() {
   return (
-    <Tabs
-      screenOptions={{
-        headerStyle: {
-          backgroundColor: theme.colors.dirtDark,
-          borderBottomColor: theme.colors.borderDark,
-          borderBottomWidth: 4,
-        },
-        headerTitleStyle: {
-          color: theme.colors.gold,
-          fontFamily: theme.font,
-          fontSize: 18,
-          textTransform: 'uppercase',
-          letterSpacing: 1,
-        },
-        headerTintColor: theme.colors.gold,
-        tabBarStyle: {
-          backgroundColor: theme.colors.bgDark,
-          borderTopColor: theme.colors.borderDark,
-          borderTopWidth: 4,
-          height: Platform.OS === 'ios' ? 88 : 64,
-          paddingTop: 6,
-        },
-        tabBarActiveTintColor: theme.colors.emerald,
-        tabBarInactiveTintColor: theme.colors.textSecondary,
-        tabBarLabelStyle: {
-          fontFamily: theme.font,
-          fontSize: 10,
-          textTransform: 'uppercase',
-          letterSpacing: 0.5,
-        },
-      }}
-    >
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Home',
-          tabBarIcon: ({ color, size }) => <Ionicons name="home" size={size} color={color} />,
-          tabBarButtonTestID: 'tab-home',
-        }}
-      />
-      <Tabs.Screen
-        name="guide"
-        options={{
-          title: 'Guide',
-          tabBarIcon: ({ color, size }) => <Ionicons name="book" size={size} color={color} />,
-          tabBarButtonTestID: 'tab-guide',
-        }}
-      />
-      <Tabs.Screen
-        name="loadout"
-        options={{
-          title: 'Loadout',
-          tabBarIcon: ({ color, size }) => <Ionicons name="hammer" size={size} color={color} />,
-          tabBarButtonTestID: 'tab-loadout',
-        }}
-      />
-      <Tabs.Screen
-        name="forum"
-        options={{
-          title: 'Forum',
-          tabBarIcon: ({ color, size }) => <Ionicons name="chatbubbles" size={size} color={color} />,
-          tabBarButtonTestID: 'tab-forum',
-        }}
-      />
-      <Tabs.Screen
-        name="chat"
-        options={{
-          title: 'Coach',
-          tabBarIcon: ({ color, size }) => <Ionicons name="sparkles" size={size} color={color} />,
-          tabBarButtonTestID: 'tab-chat',
-        }}
-      />
-    </Tabs>
+    <SafeAreaProvider>
+      <AuthProvider>
+        <Gate>
+          <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.colors.bg } }}>
+            <Stack.Screen name="(tabs)" />
+            <Stack.Screen name="login" />
+            <Stack.Screen name="signup" />
+            <Stack.Screen name="dps" options={{ headerShown: true }} />
+            <Stack.Screen name="leaderboard" options={{ headerShown: true }} />
+            <Stack.Screen name="notifications" options={{ headerShown: true }} />
+          </Stack>
+        </Gate>
+      </AuthProvider>
+    </SafeAreaProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: theme.colors.bg },
+});
