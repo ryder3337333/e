@@ -1,0 +1,191 @@
+{
+  "theme": "Dark / Game-Like",
+  "archetype": "Electric & Neon (Contextualized as 16-bit Minecraft Blocky Aesthetic)",
+  "app_type": "mobile_app",
+  "platform": "React Native (Expo)",
+  "styling_engine": "StyleSheet",
+  "global_rules": [
+    "Must use only React Native components (View, Text, ScrollView, Image, TouchableOpacity, Pressable, TextInput, FlatList) and StyleSheet.",
+    "No HTML tags, no className, no Tailwind CSS.",
+    "All interactive and key informational elements MUST include a `testID` attribute.",
+    "Use Flexbox for all layouts.",
+    "Simulate pixel art borders by using thick, integer-based borders (e.g., borderWidth: 4) and hard edges (borderRadius: 0 or very small like 2).",
+    "To simulate a blocky 3D feel on buttons, use a thicker borderBottomWidth with a darker shade.",
+    "Use a monospace font family fallback (Platform.select({ ios: 'Menlo', android: 'monospace' })) and uppercase for headings to simulate retro pixel fonts."
+  ],
+  "colors": {
+    "background": {
+      "main": "#2c2c2c",
+      "stone": "#7d7d7d",
+      "stoneDark": "#5a5a5a",
+      "dirt": "#866043",
+      "dirtDark": "#5c3a21",
+      "nether": "#4a1515",
+      "obsidian": "#15101a"
+    },
+    "text": {
+      "primary": "#ffffff",
+      "secondary": "#aaaaaa",
+      "gold": "#ffaa00"
+    },
+    "accents": {
+      "diamond": "#55ffff",
+      "emerald": "#55ff55",
+      "redstone": "#ff5555",
+      "lapis": "#5555ff",
+      "xpGreen": "#a3fc58"
+    },
+    "borders": {
+      "light": "#9d9d9d",
+      "dark": "#3a3a3a",
+      "thick": 4
+    }
+  },
+  "typography": {
+    "fontFamily": "monospace",
+    "h1": {
+      "fontSize": 32,
+      "fontWeight": "bold",
+      "color": "#ffffff",
+      "textTransform": "uppercase",
+      "textShadowColor": "#3a3a3a",
+      "textShadowOffset": { "width": 2, "height": 2 },
+      "textShadowRadius": 0
+    },
+    "h2": {
+      "fontSize": 24,
+      "fontWeight": "bold",
+      "color": "#ffaa00",
+      "textTransform": "uppercase",
+      "textShadowColor": "#5c3a21",
+      "textShadowOffset": { "width": 2, "height": 2 },
+      "textShadowRadius": 0
+    },
+    "h3": {
+      "fontSize": 18,
+      "fontWeight": "bold",
+      "color": "#ffffff",
+      "textTransform": "uppercase"
+    },
+    "body": {
+      "fontSize": 14,
+      "color": "#ffffff"
+    },
+    "caption": {
+      "fontSize": 12,
+      "color": "#aaaaaa"
+    }
+  },
+  "spacing": {
+    "xs": 4,
+    "sm": 8,
+    "md": 16,
+    "lg": 24,
+    "xl": 32,
+    "xxl": 48
+  },
+  "components": {
+    "button": {
+      "primary": {
+        "backgroundColor": "#55ff55",
+        "borderColor": "#00aa00",
+        "borderWidth": 4,
+        "borderBottomWidth": 8,
+        "paddingVertical": 12,
+        "paddingHorizontal": 24,
+        "alignItems": "center",
+        "justifyContent": "center"
+      },
+      "secondary": {
+        "backgroundColor": "#7d7d7d",
+        "borderColor": "#3a3a3a",
+        "borderWidth": 4,
+        "borderBottomWidth": 8,
+        "paddingVertical": 12,
+        "paddingHorizontal": 24,
+        "alignItems": "center",
+        "justifyContent": "center"
+      },
+      "text": {
+        "color": "#ffffff",
+        "fontSize": 16,
+        "fontWeight": "bold",
+        "textTransform": "uppercase",
+        "textShadowColor": "#3a3a3a",
+        "textShadowOffset": { "width": 2, "height": 2 },
+        "textShadowRadius": 0
+      }
+    },
+    "card": {
+      "backgroundColor": "#5a5a5a",
+      "borderColor": "#3a3a3a",
+      "borderWidth": 4,
+      "padding": 16,
+      "marginVertical": 8
+    },
+    "input": {
+      "backgroundColor": "#15101a",
+      "borderColor": "#5a5a5a",
+      "borderWidth": 4,
+      "color": "#ffffff",
+      "padding": 12,
+      "fontSize": 16,
+      "fontFamily": "monospace"
+    },
+    "badge": {
+      "backgroundColor": "#ffaa00",
+      "borderColor": "#8b5a2b",
+      "borderWidth": 2,
+      "paddingHorizontal": 8,
+      "paddingVertical": 4
+    }
+  },
+  "media": {
+    "hero": {
+      "url": "https://static.prod-images.emergentagent.com/jobs/810b6ffd-8ec2-40e5-b61e-9d229caff012/images/c718a33bd6ff5b948dadae9c441d484f27f67fd14f92548db958dc865565fa5c.png",
+      "description": "Seamless stone block texture. Use for global background or container backgrounds.",
+      "category": "background",
+      "slug_name": "stone_texture"
+    },
+    "border": {
+      "url": "https://static.prod-images.emergentagent.com/jobs/810b6ffd-8ec2-40e5-b61e-9d229caff012/images/467b78ce41c3731a50284db211dd109714f1cbbc29b527c53a403e658647e4b9.png",
+      "description": "Dirt block texture with grass top edge. Use for dividers, tab bar backgrounds, or header borders.",
+      "category": "texture",
+      "slug_name": "dirt_grass_texture"
+    },
+    "mace_icon": {
+      "url": "https://static.prod-images.emergentagent.com/jobs/810b6ffd-8ec2-40e5-b61e-9d229caff012/images/f10871cada47e512d2839ac2f66314fb0656ef5603eb6a148a092cb43818c08a.png",
+      "description": "Pixel art heavy mace weapon. Use as the main app logo, hero section icon, or in the loadout planner.",
+      "category": "icon",
+      "slug_name": "mace_icon"
+    },
+    "enchantment_icon": {
+      "url": "https://static.prod-images.emergentagent.com/jobs/810b6ffd-8ec2-40e5-b61e-9d229caff012/images/14a95b1fe2ccc074baa0a5eee611b5d571ae268e5452404fe8a23d6e6ed0c2d0.png",
+      "description": "Glowing enchanted book. Use in the Enchantments guide section.",
+      "category": "icon",
+      "slug_name": "enchanted_book_icon"
+    },
+    "tier_icon": {
+      "url": "https://static.prod-images.emergentagent.com/jobs/810b6ffd-8ec2-40e5-b61e-9d229caff012/images/f7cbef28761d8ff29d20be5bd0c9acdb857a5e492c320e9bd91e3af7f30a45d2.png",
+      "description": "Diamond sword and armor. Use for the Tier List section or PvP tips.",
+      "category": "icon",
+      "slug_name": "diamond_gear_icon"
+    }
+  },
+  "layout_patterns": {
+    "navigation": "Bottom tab navigation with a dark stone background. Active tab uses an Emerald Green tint, inactive uses Stone Dark.",
+    "screen_container": "Use a dark background (#2c2c2c) or repeat the stone_texture image for the main View.",
+    "list_items": "Render list items as Cards with dirt-colored borders and stone backgrounds. Align text to the left.",
+    "header": "Custom headers utilizing dirt_grass_texture or dark stone with thick bottom borders."
+  },
+  "instructions_to_main_agent": [
+    "Create a React Native Expo app.",
+    "Use purely React Native primitive components (`View`, `Text`, `Image`, `ScrollView`, `FlatList`, `TouchableOpacity`, `TextInput`).",
+    "Style completely with `StyleSheet.create`. DO NOT use Tailwind, NativeWind, HTML, or `className`.",
+    "Include a Bottom Tab Navigator using React Navigation to connect: Home, Guide, Loadout, Forum, Chat.",
+    "Implement the UI focusing on a blocky, 16-bit Minecraft aesthetic. Use thick borders (4px-8px) and no border radius to create sharp, pixel-like containers.",
+    "Use the provided image URLs via the `Image` component. For repeating textures like stone_texture, use `resizeMode='repeat'` if possible, or set it as a large background image.",
+    "Incorporate `testID` attributes on all buttons, tabs, input fields, and list items.",
+    "Populate the app with dummy data for the Mace mechanics guide, best enchantments (Density, Breach, Wind Burst), a basic Tier list, Loadout planner state, and a mockup of the AI chatbot screen."
+  ]
+}
