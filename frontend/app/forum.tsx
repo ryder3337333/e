@@ -1,0 +1,242 @@
+import { useEffect, useState, useCallback } from 'react';
+import {
+  View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, Modal,
+  KeyboardAvoidingView, Platform, ImageBackground, ScrollView, Alert, ActivityIndicator,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import { theme, API_URL } from '@/src/theme';
+
+type Post = { id: string; author: string; title: string; body: string; likes: number; comments_count: number; created_at: string };
+type Comment = { id: string; author: string; text: string; created_at: string };
+
+export default function ForumScreen() {
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
+  const [composerOpen, setComposerOpen] = useState(false);
+  const [author, setAuthor] = useState('Steve');
+  const [title, setTitle] = useState('');
+  const [body, setBody] = useState('');
+  const [openPost, setOpenPost] = useState<Post | null>(null);
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [commentText, setCommentText] = useState('');
+  const [loadingComments, setLoadingComments] = useState(false);
+
+  const fetchPosts = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const r = await fetch(`${API_URL}/forum/posts`);
+      setPosts(await r.json());
+    } catch (e) { console.warn(e); }
+    setRefreshing(false);
+  }, []);
+
+  useEffect(() => { fetchPosts(); }, [fetchPosts]);
+
+  const create = async () => {
+    if (!title.trim() || !body.trim()) {
+      Alert.alert('Missing fields', 'Title and body are required.');
+      return;
+    }
+    try {
+      const r = await fetch(`${API_URL}/forum/posts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ author: author.trim() || 'Anonymous', title: title.trim(), body: body.trim() }),
+      });
+      if (!r.ok) throw new Error('Create failed');
+      setTitle(''); setBody('');
+      setComposerOpen(false);
+      await fetchPosts();
+    } catch (e) { Alert.alert('Error', String(e)); }
+  };
+
+  const like = async (id: string) => {
+    try {
+      const r = await fetch(`${API_URL}/forum/posts/${id}/like`, { method: 'POST' });
+      const updated: Post = await r.json();
+      setPosts((p) => p.map((x) => (x.id === id ? updated : x)));
+      if (openPost?.id === id) setOpenPost(updated);
+    } catch (e) { console.warn(e); }
+  };
+
+  const openThread = async (p: Post) => {
+    setOpenPost(p);
+    setLoadingComments(true);
+    try {
+      const r = await fetch(`${API_URL}/forum/posts/${p.id}/comments`);
+      setComments(await r.json());
+    } catch (e) { console.warn(e); }
+    setLoadingComments(false);
+  };
+
+  const addComment = async () => {
+    if (!openPost || !commentText.trim()) return;
+    try {
+      const r = await fetch(`${API_URL}/forum/posts/${openPost.id}/comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ author: author.trim() || 'Anonymous', text: commentText.trim() }),
+      });
+      const c: Comment = await r.json();
+      setComments((cs) => [...cs, c]);
+      setCommentText('');
+      setPosts((p) => p.map((x) => (x.id === openPost.id ? { ...x, comments_count: x.comments_count + 1 } : x)));
+      setOpenPost({ ...openPost, comments_count: openPost.comments_count + 1 });
+    } catch (e) { console.warn(e); }
+  };
+
+  return (
+    <SafeAreaView style={styles.safe} edges={['left', 'right']} testID="forum-screen">
+      <ImageBackground source={{ uri: theme.media.stone }} resizeMode="repeat"
+        style={styles.bg} imageStyle={{ opacity: 0.15 }}>
+        <View style={styles.headerBar}>
+          <Text style={styles.h1}>COMMUNITY</Text>
+          <TouchableOpacity testID="open-composer-btn" onPress={() => setComposerOpen(true)} style={styles.newBtn}>
+            <Ionicons name="add" size={20} color="#000" />
+            <Text style={styles.newBtnTxt}>NEW</Text>
+          </TouchableOpacity>
+        </View>
+
+        <FlatList
+          contentContainerStyle={{ padding: theme.spacing.md, paddingBottom: 60 }}
+          data={posts}
+          keyExtractor={(p) => p.id}
+          refreshing={refreshing}
+          onRefresh={fetchPosts}
+          ListEmptyComponent={
+            <Text style={styles.empty}>No posts yet — be first to share a strat.</Text>
+          }
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              testID={`post-${item.id}`}
+              activeOpacity={0.7}
+              onPress={() => openThread(item)}
+              style={styles.postCard}
+            >
+              <Text style={styles.postTitle} numberOfLines={2}>{item.title}</Text>
+              <Text style={styles.postAuthor}>BY {item.author.toUpperCase()}</Text>
+              <Text style={styles.postBody} numberOfLines={3}>{item.body}</Text>
+              <View style={styles.postFooter}>
+                <TouchableOpacity testID={`like-${item.id}`} onPress={() => like(item.id)} style={styles.iconBtn}>
+                  <Ionicons name="flame" size={16} color={theme.colors.redstone} />
+                  <Text style={styles.iconText}>{item.likes}</Text>
+                </TouchableOpacity>
+                <View style={styles.iconBtn}>
+                  <Ionicons name="chatbubble" size={16} color={theme.colors.diamond} />
+                  <Text style={styles.iconText}>{item.comments_count}</Text>
+                </View>
+              </View>
+            </TouchableOpacity>
+          )}
+        />
+
+        {/* Composer Modal */}
+        <Modal visible={composerOpen} transparent animationType="slide" onRequestClose={() => setComposerOpen(false)}>
+          <KeyboardAvoidingView style={styles.modalWrap} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+            <View style={styles.modal} testID="composer-modal">
+              <Text style={styles.modalTitle}>NEW POST</Text>
+              <TextInput testID="composer-author" value={author} onChangeText={setAuthor}
+                placeholder="USERNAME" placeholderTextColor={theme.colors.textSecondary} style={styles.input} />
+              <TextInput testID="composer-title" value={title} onChangeText={setTitle}
+                placeholder="TITLE" placeholderTextColor={theme.colors.textSecondary} style={styles.input} />
+              <TextInput testID="composer-body" value={body} onChangeText={setBody} multiline
+                placeholder="SHARE YOUR STRATEGY..." placeholderTextColor={theme.colors.textSecondary}
+                style={[styles.input, { height: 120, textAlignVertical: 'top' }]} />
+              <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+                <TouchableOpacity testID="cancel-post-btn" onPress={() => setComposerOpen(false)} style={[styles.btn, styles.btnGray]}>
+                  <Text style={styles.btnTxt}>CANCEL</Text>
+                </TouchableOpacity>
+                <TouchableOpacity testID="submit-post-btn" onPress={create} style={[styles.btn, styles.btnPrimary]}>
+                  <Text style={styles.btnTxt}>POST</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </Modal>
+
+        {/* Thread Modal */}
+        <Modal visible={!!openPost} transparent animationType="slide" onRequestClose={() => setOpenPost(null)}>
+          <KeyboardAvoidingView style={styles.modalWrap} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+            <View style={styles.thread} testID="thread-modal">
+              <View style={styles.threadHeader}>
+                <Text style={styles.modalTitle} numberOfLines={2}>{openPost?.title}</Text>
+                <TouchableOpacity testID="close-thread-btn" onPress={() => setOpenPost(null)}>
+                  <Ionicons name="close" size={24} color={theme.colors.gold} />
+                </TouchableOpacity>
+              </View>
+              <ScrollView style={{ maxHeight: 400 }}>
+                <Text style={styles.threadAuthor}>BY {openPost?.author.toUpperCase()}</Text>
+                <Text style={styles.threadBody}>{openPost?.body}</Text>
+                <View style={styles.divider} />
+                <Text style={styles.commentsHeader}>COMMENTS ({comments.length})</Text>
+                {loadingComments && <ActivityIndicator color={theme.colors.gold} />}
+                {comments.map((c) => (
+                  <View key={c.id} style={styles.comment}>
+                    <Text style={styles.commentAuthor}>{c.author}</Text>
+                    <Text style={styles.commentText}>{c.text}</Text>
+                  </View>
+                ))}
+              </ScrollView>
+              <View style={{ flexDirection: 'row', gap: 6, marginTop: 8 }}>
+                <TextInput testID="comment-input" value={commentText} onChangeText={setCommentText}
+                  placeholder="ADD COMMENT..." placeholderTextColor={theme.colors.textSecondary}
+                  style={[styles.input, { flex: 1 }]} />
+                <TouchableOpacity testID="submit-comment-btn" onPress={addComment} style={[styles.btn, styles.btnPrimary, { paddingHorizontal: 16 }]}>
+                  <Ionicons name="send" size={16} color="#fff" />
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </Modal>
+      </ImageBackground>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: theme.colors.bg },
+  bg: { flex: 1 },
+  headerBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    padding: theme.spacing.md, backgroundColor: theme.colors.dirtDark,
+    borderBottomColor: theme.colors.borderDark, borderBottomWidth: 4 },
+  h1: { fontFamily: theme.font, fontSize: 20, fontWeight: 'bold', color: theme.colors.gold,
+    textTransform: 'uppercase', letterSpacing: 2 },
+  newBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: theme.colors.gold,
+    borderColor: '#8b5a2b', borderWidth: 2, borderBottomWidth: 4, paddingHorizontal: 10, paddingVertical: 6, gap: 4 },
+  newBtnTxt: { fontFamily: theme.font, fontSize: 12, fontWeight: 'bold', color: '#000' },
+  empty: { fontFamily: theme.font, color: theme.colors.textSecondary, textAlign: 'center', padding: 24 },
+  postCard: { backgroundColor: theme.colors.stoneDark, borderColor: theme.colors.borderDark,
+    borderWidth: 4, padding: theme.spacing.md, marginBottom: theme.spacing.sm },
+  postTitle: { fontFamily: theme.font, fontSize: 16, color: theme.colors.gold, fontWeight: 'bold',
+    textTransform: 'uppercase', marginBottom: 4 },
+  postAuthor: { fontFamily: theme.font, fontSize: 10, color: theme.colors.diamond, marginBottom: 8 },
+  postBody: { fontFamily: theme.font, fontSize: 12, color: theme.colors.text, lineHeight: 17 },
+  postFooter: { flexDirection: 'row', gap: 16, marginTop: 12, paddingTop: 8,
+    borderTopColor: theme.colors.borderDark, borderTopWidth: 2 },
+  iconBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  iconText: { fontFamily: theme.font, fontSize: 12, color: theme.colors.text, fontWeight: 'bold' },
+  modalWrap: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', padding: 16 },
+  modal: { backgroundColor: theme.colors.stoneDark, borderColor: theme.colors.borderDark, borderWidth: 4,
+    padding: theme.spacing.md },
+  thread: { backgroundColor: theme.colors.stoneDark, borderColor: theme.colors.borderDark, borderWidth: 4,
+    padding: theme.spacing.md, maxHeight: '85%' },
+  threadHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 },
+  threadAuthor: { fontFamily: theme.font, fontSize: 11, color: theme.colors.diamond, marginBottom: 8 },
+  threadBody: { fontFamily: theme.font, fontSize: 13, color: theme.colors.text, lineHeight: 19 },
+  divider: { height: 2, backgroundColor: theme.colors.borderDark, marginVertical: 12 },
+  commentsHeader: { fontFamily: theme.font, fontSize: 13, color: theme.colors.gold, fontWeight: 'bold',
+    marginBottom: 8 },
+  comment: { backgroundColor: theme.colors.obsidian, borderColor: theme.colors.borderDark, borderWidth: 2,
+    padding: 8, marginBottom: 6 },
+  commentAuthor: { fontFamily: theme.font, fontSize: 10, color: theme.colors.emerald, fontWeight: 'bold' },
+  commentText: { fontFamily: theme.font, fontSize: 12, color: theme.colors.text, marginTop: 2 },
+  modalTitle: { fontFamily: theme.font, fontSize: 18, fontWeight: 'bold', color: theme.colors.gold,
+    textTransform: 'uppercase', marginBottom: 12, flex: 1, marginRight: 8 },
+  input: { backgroundColor: theme.colors.obsidian, borderColor: theme.colors.borderDark, borderWidth: 4,
+    color: theme.colors.text, padding: 10, fontSize: 13, fontFamily: theme.font, marginBottom: 8 },
+  btn: { flex: 1, borderWidth: 4, borderBottomWidth: 6, paddingVertical: 10, alignItems: 'center', justifyContent: 'center' },
+  btnPrimary: { backgroundColor: theme.colors.emerald, borderColor: theme.colors.emeraldDark },
+  btnGray: { backgroundColor: theme.colors.stone, borderColor: theme.colors.borderDark },
+  btnTxt: { fontFamily: theme.font, fontSize: 13, fontWeight: 'bold', color: '#fff', textTransform: 'uppercase' },
+});
