@@ -687,6 +687,339 @@ async def replay_history(user=Depends(get_current_user)):
     return docs
 
 
+# ---------- Clans ----------
+class ClanCreate(BaseModel):
+    name: str = Field(..., min_length=3, max_length=24)
+    tag: str = Field(..., min_length=2, max_length=5, pattern=r"^[A-Z0-9]+$")
+    description: str = Field("", max_length=200)
+
+
+class ClanPublic(BaseModel):
+    id: str
+    name: str
+    tag: str
+    description: str
+    leader_id: str
+    leader_name: str
+    member_count: int
+    avg_elo: int
+    is_member: bool = False
+    created_at: str
+
+
+class ClanMember(BaseModel):
+    user_id: str
+    username: str
+    role: str
+    elo: int
+    kdr: float
+    joined_at: str
+
+
+async def _build_clan(doc: dict, viewer_id: Optional[str] = None) -> ClanPublic:
+    members = await db.clan_members.find({"clan_id": doc["id"]}, {"_id": 0}).to_list(200)
+    elo_sum = 0
+    count = 0
+    is_member = False
+    for m in members:
+        if viewer_id and m["user_id"] == viewer_id:
+            is_member = True
+        s = await _summary(m["user_id"])
+        elo_sum += s.elo
+        count += 1
+    avg_elo = int(elo_sum / count) if count > 0 else 0
+    leader = await db.users.find_one({"id": doc["leader_id"]}, {"_id": 0})
+    leader_name = leader["username"] if leader else "Unknown"
+    return ClanPublic(
+        id=doc["id"], name=doc["name"], tag=doc["tag"], description=doc.get("description", ""),
+        leader_id=doc["leader_id"], leader_name=leader_name,
+        member_count=count, avg_elo=avg_elo, is_member=is_member,
+        created_at=doc["created_at"],
+    )
+
+
+@api_router.post("/clans", response_model=ClanPublic)
+async def create_clan(payload: ClanCreate, user=Depends(get_current_user)):
+    existing_membership = await db.clan_members.find_one({"user_id": user["id"]})
+    if existing_membership:
+        raise HTTPException(status_code=400, detail="Leave your current clan first")
+    if await db.clans.find_one({"name_lower": payload.name.lower()}):
+        raise HTTPException(status_code=400, detail="Clan name taken")
+    if await db.clans.find_one({"tag": payload.tag.upper()}):
+        raise HTTPException(status_code=400, detail="Clan tag taken")
+    cid = str(uuid.uuid4())
+    doc = {
+        "id": cid, "name": payload.name, "name_lower": payload.name.lower(),
+        "tag": payload.tag.upper(), "description": payload.description,
+        "leader_id": user["id"], "created_at": now_iso(),
+    }
+    await db.clans.insert_one(doc)
+    await db.clan_members.insert_one({
+        "clan_id": cid, "user_id": user["id"], "role": "leader", "joined_at": now_iso(),
+    })
+    return await _build_clan(doc, user["id"])
+
+
+@api_router.get("/clans", response_model=List[ClanPublic])
+async def list_clans(authorization: Optional[str] = Header(None)):
+    viewer = await maybe_user(authorization)
+    viewer_id = viewer["id"] if viewer else None
+    docs = await db.clans.find({}, {"_id": 0}).sort("created_at", -1).to_list(100)
+    out = []
+    for d in docs:
+        out.append(await _build_clan(d, viewer_id))
+    out.sort(key=lambda c: c.avg_elo, reverse=True)
+    return out
+
+
+@api_router.get("/clans/mine")
+async def my_clan(user=Depends(get_current_user)):
+    m = await db.clan_members.find_one({"user_id": user["id"]}, {"_id": 0})
+    if not m:
+        return None
+    doc = await db.clans.find_one({"id": m["clan_id"]}, {"_id": 0})
+    if not doc:
+        return None
+    return await _build_clan(doc, user["id"])
+
+
+@api_router.get("/clans/{clan_id}")
+async def get_clan(clan_id: str, authorization: Optional[str] = Header(None)):
+    viewer = await maybe_user(authorization)
+    doc = await db.clans.find_one({"id": clan_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Clan not found")
+    members_docs = await db.clan_members.find({"clan_id": clan_id}, {"_id": 0}).to_list(200)
+    members: List[ClanMember] = []
+    for m in members_docs:
+        u = await db.users.find_one({"id": m["user_id"]}, {"_id": 0, "password_hash": 0})
+        if not u:
+            continue
+        s = await _summary(u["id"])
+        members.append(ClanMember(user_id=u["id"], username=u["username"], role=m["role"],
+                                  elo=s.elo, kdr=s.kdr, joined_at=m["joined_at"]))
+    members.sort(key=lambda x: (x.role != "leader", -x.elo))
+    info = await _build_clan(doc, viewer["id"] if viewer else None)
+    return {"clan": info.model_dump(), "members": [m.model_dump() for m in members]}
+
+
+@api_router.post("/clans/{clan_id}/join")
+async def join_clan(clan_id: str, user=Depends(get_current_user)):
+    existing = await db.clan_members.find_one({"user_id": user["id"]})
+    if existing:
+        raise HTTPException(status_code=400, detail="Already in a clan")
+    doc = await db.clans.find_one({"id": clan_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Clan not found")
+    await db.clan_members.insert_one({
+        "clan_id": clan_id, "user_id": user["id"], "role": "member", "joined_at": now_iso(),
+    })
+    return {"ok": True}
+
+
+@api_router.delete("/clans/{clan_id}/leave")
+async def leave_clan(clan_id: str, user=Depends(get_current_user)):
+    m = await db.clan_members.find_one({"clan_id": clan_id, "user_id": user["id"]}, {"_id": 0})
+    if not m:
+        raise HTTPException(status_code=404, detail="Not a member")
+    if m["role"] == "leader":
+        # Disband if leader leaves & no other members; otherwise promote next
+        others = await db.clan_members.find({"clan_id": clan_id, "user_id": {"$ne": user["id"]}}, {"_id": 0}).to_list(200)
+        if not others:
+            await db.clans.delete_one({"id": clan_id})
+            await db.clan_members.delete_many({"clan_id": clan_id})
+            return {"ok": True, "disbanded": True}
+        new_leader = others[0]
+        await db.clan_members.update_one({"clan_id": clan_id, "user_id": new_leader["user_id"]},
+                                          {"$set": {"role": "leader"}})
+        await db.clans.update_one({"id": clan_id}, {"$set": {"leader_id": new_leader["user_id"]}})
+    await db.clan_members.delete_one({"clan_id": clan_id, "user_id": user["id"]})
+    return {"ok": True}
+
+
+# ---------- 1v1 Challenges ----------
+class ChallengeCreate(BaseModel):
+    opponent_username: str
+    mode: str = "Mace 1v1"
+    server: str = "Hypixel"
+    message: str = Field("", max_length=200)
+
+
+class ChallengeRow(BaseModel):
+    id: str
+    challenger_id: str
+    challenger_name: str
+    opponent_id: str
+    opponent_name: str
+    mode: str
+    server: str
+    message: str
+    status: str  # pending | accepted | declined | completed
+    winner_id: Optional[str] = None
+    created_at: str
+    responded_at: Optional[str] = None
+
+
+@api_router.post("/challenges", response_model=ChallengeRow)
+async def create_challenge(payload: ChallengeCreate, user=Depends(get_current_user)):
+    opp = await db.users.find_one({"username_lower": payload.opponent_username.lower()},
+                                  {"_id": 0, "password_hash": 0})
+    if not opp:
+        raise HTTPException(status_code=404, detail="Player not found")
+    if opp["id"] == user["id"]:
+        raise HTTPException(status_code=400, detail="Cannot challenge yourself")
+    doc = {
+        "id": str(uuid.uuid4()),
+        "challenger_id": user["id"], "challenger_name": user["username"],
+        "opponent_id": opp["id"], "opponent_name": opp["username"],
+        "mode": payload.mode, "server": payload.server, "message": payload.message,
+        "status": "pending", "winner_id": None,
+        "created_at": now_iso(), "responded_at": None,
+    }
+    await db.challenges.insert_one(doc)
+    # Drop a notification to the opponent
+    notif = Notification(
+        user_id=opp["id"], kind="challenge", post_id=doc["id"],
+        post_title=f"{payload.mode} on {payload.server}", actor=user["username"],
+        preview=(payload.message or f"{user['username']} challenged you to {payload.mode}!")[:120],
+    )
+    await db.notifications.insert_one(notif.model_dump())
+    return ChallengeRow(**doc)
+
+
+@api_router.get("/challenges", response_model=List[ChallengeRow])
+async def list_challenges(user=Depends(get_current_user), direction: str = "all"):
+    q: dict = {}
+    if direction == "incoming":
+        q = {"opponent_id": user["id"]}
+    elif direction == "outgoing":
+        q = {"challenger_id": user["id"]}
+    else:
+        q = {"$or": [{"opponent_id": user["id"]}, {"challenger_id": user["id"]}]}
+    docs = await db.challenges.find(q, {"_id": 0}).sort("created_at", -1).to_list(100)
+    return [ChallengeRow(**d) for d in docs]
+
+
+async def _respond_challenge(cid: str, user, new_status: str, winner_id: Optional[str] = None):
+    doc = await db.challenges.find_one({"id": cid}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Challenge not found")
+    if user["id"] not in (doc["opponent_id"], doc["challenger_id"]):
+        raise HTTPException(status_code=403, detail="Not your challenge")
+    upd = {"status": new_status, "responded_at": now_iso()}
+    if winner_id:
+        upd["winner_id"] = winner_id
+    await db.challenges.update_one({"id": cid}, {"$set": upd})
+    doc.update(upd)
+    return ChallengeRow(**doc)
+
+
+@api_router.post("/challenges/{cid}/accept", response_model=ChallengeRow)
+async def accept_challenge(cid: str, user=Depends(get_current_user)):
+    doc = await db.challenges.find_one({"id": cid}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Challenge not found")
+    if doc["opponent_id"] != user["id"]:
+        raise HTTPException(status_code=403, detail="Only the challenged player can accept")
+    return await _respond_challenge(cid, user, "accepted")
+
+
+@api_router.post("/challenges/{cid}/decline", response_model=ChallengeRow)
+async def decline_challenge(cid: str, user=Depends(get_current_user)):
+    doc = await db.challenges.find_one({"id": cid}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Challenge not found")
+    if doc["opponent_id"] != user["id"]:
+        raise HTTPException(status_code=403, detail="Only the challenged player can decline")
+    return await _respond_challenge(cid, user, "declined")
+
+
+class CompleteReq(BaseModel):
+    winner_id: str
+
+
+@api_router.post("/challenges/{cid}/complete", response_model=ChallengeRow)
+async def complete_challenge(cid: str, payload: CompleteReq, user=Depends(get_current_user)):
+    doc = await db.challenges.find_one({"id": cid}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Challenge not found")
+    if payload.winner_id not in (doc["opponent_id"], doc["challenger_id"]):
+        raise HTTPException(status_code=400, detail="Winner must be a participant")
+    return await _respond_challenge(cid, user, "completed", winner_id=payload.winner_id)
+
+
+# ---------- Find Duo ----------
+DUO_TTL_HOURS = 2
+
+
+class DuoCreate(BaseModel):
+    mode: str = "Ranked Duos"
+    region: str = "NA"
+    skill: str = "any"  # any | bronze | silver | gold | diamond
+    message: str = Field("", max_length=200)
+
+
+class DuoRow(BaseModel):
+    id: str
+    user_id: str
+    username: str
+    mode: str
+    region: str
+    skill: str
+    message: str
+    elo: int
+    kdr: float
+    created_at: str
+
+
+@api_router.post("/duo", response_model=DuoRow)
+async def post_duo(payload: DuoCreate, user=Depends(get_current_user)):
+    # One open post per user — overwrite
+    await db.duo_queue.delete_many({"user_id": user["id"]})
+    doc = {
+        "id": str(uuid.uuid4()),
+        "user_id": user["id"], "username": user["username"],
+        "mode": payload.mode, "region": payload.region, "skill": payload.skill,
+        "message": payload.message, "created_at": now_iso(),
+    }
+    await db.duo_queue.insert_one(doc)
+    s = await _summary(user["id"])
+    return DuoRow(**doc, elo=s.elo, kdr=s.kdr)
+
+
+@api_router.get("/duo", response_model=List[DuoRow])
+async def list_duo(region: Optional[str] = None):
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=DUO_TTL_HOURS)).isoformat()
+    q: dict = {"created_at": {"$gte": cutoff}}
+    if region and region != "ALL":
+        q["region"] = region
+    docs = await db.duo_queue.find(q, {"_id": 0}).sort("created_at", -1).to_list(100)
+    out: List[DuoRow] = []
+    for d in docs:
+        s = await _summary(d["user_id"])
+        out.append(DuoRow(**d, elo=s.elo, kdr=s.kdr))
+    return out
+
+
+@api_router.delete("/duo")
+async def cancel_duo(user=Depends(get_current_user)):
+    await db.duo_queue.delete_many({"user_id": user["id"]})
+    return {"ok": True}
+
+
+@api_router.get("/duo/mine")
+async def my_duo(user=Depends(get_current_user)):
+    doc = await db.duo_queue.find_one({"user_id": user["id"]}, {"_id": 0})
+    if not doc:
+        return None
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=DUO_TTL_HOURS)).isoformat()
+    if doc["created_at"] < cutoff:
+        await db.duo_queue.delete_many({"user_id": user["id"]})
+        return None
+    s = await _summary(user["id"])
+    return DuoRow(**doc, elo=s.elo, kdr=s.kdr).model_dump()
+
+
 app.include_router(api_router)
 
 app.add_middleware(

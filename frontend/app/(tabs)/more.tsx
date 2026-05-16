@@ -24,6 +24,9 @@ const TOOLS: Tool[] = [
   { key: 'servers',   icon: 'globe',          label: 'SERVERS',          sub: 'Find mace PvP realms',       route: '/servers',      accent: theme.colors.lapis,    testID: 'more-servers' },
   { key: 'friends',   icon: 'people',         label: 'FRIENDS',          sub: 'Add & follow players',       route: '/friends',      accent: theme.colors.emerald,  testID: 'more-friends' },
   { key: 'replay',    icon: 'film',           label: 'REPLAY ANALYZER',  sub: 'AI critique your clip',      route: '/replay',       accent: theme.colors.gold,     testID: 'more-replay' },
+  { key: 'clans',     icon: 'shield',         label: 'CLANS',            sub: 'Found or join a clan',       route: '/clans',        accent: theme.colors.diamond,  testID: 'more-clans' },
+  { key: 'challenge', icon: 'flash-outline',  label: '1V1 CHALLENGE',    sub: 'Throw down the gauntlet',    route: '/challenges',   accent: theme.colors.redstone, testID: 'more-challenges' },
+  { key: 'duo',       icon: 'people-circle',  label: 'FIND DUO',         sub: 'Match with players',         route: '/duo',          accent: theme.colors.emerald,  testID: 'more-duo' },
   { key: 'notif',     icon: 'notifications',  label: 'NOTIFICATIONS',    sub: 'Inbox & alerts',             route: '/notifications',accent: theme.colors.redstone, testID: 'more-notif' },
 ];
 
@@ -60,8 +63,8 @@ export default function More() {
           </View>
 
           <View style={styles.footer}>
-            <Text style={styles.footerTxt}>★ MORE COMING SOON ★</Text>
-            <Text style={styles.footerSub}>Clans • 1v1 Challenges • Find Duo</Text>
+            <Text style={styles.footerTxt}>⚔ FORGE YOUR LEGEND ⚔</Text>
+            <Text style={styles.footerSub}>13 tools • Built for Mace 1.21+</Text>
           </View>
         </ScrollView>
       </ImageBackground>

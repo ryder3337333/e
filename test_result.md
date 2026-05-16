@@ -101,3 +101,145 @@
 #====================================================================================================
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
+
+user_problem_statement: "Minecraft Mace PvP companion app with forums, tier list, mace mechanics guide, enchantments, PvP tips, AI chatbot. Plus DPS calculator, video clip uploads, in-app inbox, weekly K-D leaderboard, email auth (unique usernames), PvP Tips Feed, Friend system, Clans, 1v1 challenge, Find Duo, Replay Analyzer, Hit Accuracy Tracker, Practice Reaction Test, Server Finder, Custom Crosshair Maker."
+
+backend:
+  - task: "Clans CRUD + membership endpoints"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Added POST/GET /clans, GET /clans/mine, GET /clans/{id}, POST /clans/{id}/join, DELETE /clans/{id}/leave. Auto-promotes new leader if leader leaves; disbands if last member."
+      - working: true
+        agent: "testing"
+        comment: "All 18 clan checks passed: create + auto leader role, duplicate name/tag rejection (400), block create-while-in-clan (400), GET /clans lists with leader_name/member_count/avg_elo, /clans/mine returns clan or null, /clans/{id} returns members with role/elo/kdr, join (member role), join rejected when already in clan, leave removes member, leader-leave promotes next member (clan.leader_id updates and new member role=leader), last-member leave returns {disbanded:true} and clan record is removed (404)."
+
+  - task: "1v1 Challenge endpoints"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Added POST /challenges (with username lookup), GET /challenges?direction=incoming|outgoing|all, POST /challenges/{id}/accept, /decline, /complete (winner_id). Drops a notification to the opponent."
+      - working: true
+        agent: "testing"
+        comment: "All 12 challenge checks passed: 404 on unknown opponent, 400 on self-challenge, opponent receives kind='challenge' notification, incoming/outgoing direction filters correct, accept/decline restricted to opponent (403 otherwise), complete validates winner_id is a participant (400 otherwise) and persists status=completed + winner_id."
+
+  - task: "Find Duo / LFG queue endpoints"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Added POST /duo (upsert per user), GET /duo?region=, DELETE /duo, GET /duo/mine. Posts expire after 2h."
+      - working: true
+        agent: "testing"
+        comment: "All 8 duo checks passed: POST /duo creates post with elo/kdr, second POST overwrites prior open post (one per user), GET /duo (no auth) lists active posts excluding overwritten ones, ?region= filter is honored, /duo/mine returns user's current post, DELETE /duo removes it and /duo/mine then returns null."
+
+  - task: "Hit Accuracy Tracker (re-uses /stats/log with kind=hit|miss)"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "Backend /stats/log already supported hit/miss kinds; verified via UI smoke test (3 hits + 1 miss => 75% accuracy)."
+
+frontend:
+  - task: "More tab with grid of 13 feature tiles"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/(tabs)/more.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "Smoke-tested via screenshot: tile grid renders all 13 features with Minecraft pixel theme; navigation works."
+
+  - task: "Hit Accuracy Tracker UI"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/accuracy.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "3 hits + 1 miss => 75% / EXCELLENT rating with bar fill. Session counter increments."
+
+  - task: "Clans screen (create / list / join / leave / detail)"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/clans.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "New screen with create modal, browse list, my-clan card with member list. Awaits backend test."
+
+  - task: "1v1 Challenges screen"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/challenges.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Send modal, incoming/outgoing tabs, accept/decline, winner-marking. Awaits backend test."
+
+  - task: "Find Duo screen"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/duo.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Queue post modal with mode/region/skill, region filter, cancel queue. Awaits backend test."
+
+metadata:
+  created_by: "main_agent"
+  version: "1.3"
+  test_sequence: 3
+  run_ui: false
+
+test_plan:
+  current_focus:
+    - "Clans CRUD + membership endpoints"
+    - "1v1 Challenge endpoints"
+    - "Find Duo / LFG queue endpoints"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+  - agent: "main"
+    message: "Added Clans, 1v1 Challenge, and Find Duo backend endpoints. Frontend screens are built and wired into the More tab. Please run backend tests on the three new task groups. Use POST /api/auth/signup to create test accounts (test_credentials.md has details). For challenges/clans tests, create at least 2 accounts so cross-user actions work."
+  - agent: "testing"
+    message: "Ran /app/backend_test.py against live backend with 3 fresh signups (A/B/C). 38/38 backend checks passed across Clans (18), Challenges (12), Find Duo (8). Verified: leader auto-assignment, duplicate name/tag and in-clan create rejection (400), leader-leave promotion + last-member disband, opponent-only accept/decline (403 otherwise), winner_id participant validation (400), notification dispatch to opponent on challenge create, duo upsert/overwrite, ?region= filter, /duo/mine + DELETE flow. No 500s observed. Note: passlib bcrypt 'AttributeError: __about__' warning in backend logs is benign (trapped) — signup/login work fine."
