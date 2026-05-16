@@ -201,7 +201,7 @@ const styles = StyleSheet.create({
   sectionHeader: { fontFamily: theme.font, fontSize: 16, fontWeight: 'bold', color: theme.colors.gold,
     textTransform: 'uppercase', marginVertical: theme.spacing.sm, letterSpacing: 1 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
-  tile: { width: '48%', aspectRatio: 1.6, backgroundColor: theme.colors.dirtDark,
+  tile: { width: '100%', aspectRatio: 1.6, backgroundColor: theme.colors.dirtDark,
     borderColor: theme.colors.borderDark, borderWidth: 4, borderBottomWidth: 8,
     alignItems: 'center', justifyContent: 'center', marginBottom: theme.spacing.sm },
   tileLabel: { fontFamily: theme.font, fontSize: 12, color: theme.colors.text, fontWeight: 'bold',

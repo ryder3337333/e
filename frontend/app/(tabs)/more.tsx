@@ -112,7 +112,7 @@ const styles = StyleSheet.create({
   },
   grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
   tile: {
-    width: '48%', marginBottom: theme.spacing.sm,
+    width: '100%', marginBottom: theme.spacing.sm,
     backgroundColor: theme.colors.stoneDark,
     borderColor: theme.colors.borderDark, borderWidth: 4,
     borderTopWidth: 6, borderBottomWidth: 8,
