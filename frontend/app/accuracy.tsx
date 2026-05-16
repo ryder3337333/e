@@ -9,6 +9,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { theme } from '@/src/theme';
 import { HomeButton } from '@/src/components/HomeButton';
 import { api } from '@/src/api';
+import { fxHit, fxMiss } from '@/src/utils/fx';
+import { useEntranceFade } from '@/src/utils/anim';
 
 type Summary = {
   kills: number; deaths: number; kdr: number; streak: number;
@@ -27,6 +29,7 @@ export default function Accuracy() {
   useEffect(() => { load(); }, [load]);
 
   const log = async (kind: 'hit' | 'miss') => {
+    if (kind === 'hit') fxHit(); else fxMiss();
     setBusy(true);
     try {
       const r = await api<Summary>('/stats/log', { method: 'POST', body: { kind } });

@@ -10,6 +10,7 @@ import { theme } from '@/src/theme';
 import { HomeButton } from '@/src/components/HomeButton';
 import { api } from '@/src/api';
 import { useAuth } from '@/src/auth';
+import { fxTap, fxSuccess, fxError } from '@/src/utils/fx';
 
 type Challenge = {
   id: string; challenger_id: string; challenger_name: string;
@@ -50,13 +51,13 @@ export default function Challenges() {
   };
 
   const respond = async (cid: string, action: 'accept' | 'decline') => {
-    try { await api(`/challenges/${cid}/${action}`, { method: 'POST', body: {} }); await load(); }
-    catch (e: any) { Alert.alert('Error', e?.message || 'Failed'); }
+    try { await api(`/challenges/${cid}/${action}`, { method: 'POST', body: {} }); if (action === 'accept') fxSuccess(); else fxTap(); await load(); }
+    catch (e: any) { fxError(); Alert.alert('Error', e?.message || 'Failed'); }
   };
 
   const setWinner = async (c: Challenge, winner_id: string) => {
-    try { await api(`/challenges/${c.id}/complete`, { method: 'POST', body: { winner_id } }); await load(); }
-    catch (e: any) { Alert.alert('Error', e?.message || 'Failed'); }
+    try { await api(`/challenges/${c.id}/complete`, { method: 'POST', body: { winner_id } }); fxSuccess(); await load(); }
+    catch (e: any) { fxError(); Alert.alert('Error', e?.message || 'Failed'); }
   };
 
   const statusColor = (s: Challenge['status']) =>

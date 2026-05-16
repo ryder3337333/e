@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack } from 'expo-router';
 import { theme } from '@/src/theme';
 import { HomeButton } from '@/src/components/HomeButton';
+import { fxTap, fxSuccess, fxError, fxHeavy } from '@/src/utils/fx';
 
 type Phase = 'idle' | 'waiting' | 'go' | 'done' | 'tooEarly';
 
@@ -26,15 +27,19 @@ export default function Reaction() {
 
   const tap = () => {
     if (phase === 'idle' || phase === 'done' || phase === 'tooEarly') {
+      fxTap();
       start();
     } else if (phase === 'waiting') {
+      fxError();
       clearTimeout(timeoutRef.current);
       setPhase('tooEarly');
     } else if (phase === 'go') {
       const reaction = Date.now() - startRef.current;
       setMs(reaction);
+      const isBest = best === null || reaction < best;
       setBest((b) => (b === null || reaction < b ? reaction : b));
       setPhase('done');
+      if (isBest) fxSuccess(); else fxHeavy();
     }
   };
 

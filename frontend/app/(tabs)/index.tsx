@@ -1,7 +1,7 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Image, TouchableOpacity, ImageBackground,
-  RefreshControl, ActivityIndicator, Alert,
+  RefreshControl, ActivityIndicator, Alert, Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -9,6 +9,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { theme } from '@/src/theme';
 import { api } from '@/src/api';
 import { useAuth } from '@/src/auth';
+import { fxTap, fxHit, fxMiss, fxNotify } from '@/src/utils/fx';
+import { useEntranceFade, usePulse } from '@/src/utils/anim';
 
 type Stats = { kills: number; deaths: number; kdr: number; streak: number };
 
@@ -34,6 +36,7 @@ export default function Home() {
   useEffect(() => { loadAll(); }, [loadAll]);
 
   const log = async (kind: 'kill' | 'death') => {
+    if (kind === 'kill') fxHit(); else fxMiss();
     setLoading(true);
     try {
       const s = await api<Stats>('/stats/log', { method: 'POST', body: { kind } });
@@ -100,12 +103,12 @@ export default function Home() {
 
           <Text style={styles.sectionHeader}>QUICK ACCESS</Text>
           <View style={styles.grid}>
-            <Tile icon="flame" label="PVP TIPS" testID="tile-tips" onPress={() => router.push('/tips')} />
-            <Tile icon="locate" label="HIT ACCURACY" testID="tile-accuracy" onPress={() => router.push('/accuracy')} />
-            <Tile icon="calculator" label="DPS CALC" testID="tile-dps" onPress={() => router.push('/dps')} />
-            <Tile icon="trophy" label="LEADERBOARD" testID="tile-leaderboard" onPress={() => router.push('/leaderboard')} />
-            <Tile icon="flash" label="REACTION" testID="tile-reaction" onPress={() => router.push('/reaction')} />
-            <Tile icon="film" label="REPLAY AI" testID="tile-replay" onPress={() => router.push('/replay')} />
+            <Tile icon="flame" label="PVP TIPS" testID="tile-tips" onPress={() => router.push('/tips')} delay={0} />
+            <Tile icon="locate" label="HIT ACCURACY" testID="tile-accuracy" onPress={() => router.push('/accuracy')} delay={60} />
+            <Tile icon="calculator" label="DPS CALC" testID="tile-dps" onPress={() => router.push('/dps')} delay={120} />
+            <Tile icon="trophy" label="LEADERBOARD" testID="tile-leaderboard" onPress={() => router.push('/leaderboard')} delay={180} />
+            <Tile icon="flash" label="REACTION" testID="tile-reaction" onPress={() => router.push('/reaction')} delay={240} />
+            <Tile icon="film" label="REPLAY AI" testID="tile-replay" onPress={() => router.push('/replay')} delay={300} />
           </View>
 
           <View style={styles.tipCard} testID="daily-tip">
@@ -144,12 +147,23 @@ function ActionButton({ label, color, borderColor, onPress, disabled, testID }: 
   );
 }
 
-function Tile({ icon, label, onPress, testID }: any) {
+function Tile({ icon, label, onPress, testID, delay = 0 }: any) {
+  const ent = useEntranceFade(delay);
+  const scale = useRef(new Animated.Value(1)).current;
   return (
-    <TouchableOpacity testID={testID} activeOpacity={0.7} onPress={onPress} style={styles.tile}>
-      <Ionicons name={icon} size={28} color={theme.colors.gold} />
-      <Text style={styles.tileLabel}>{label}</Text>
-    </TouchableOpacity>
+    <Animated.View style={[{ width: '48%' }, ent.style, { transform: [...(ent.style.transform || []), { scale }] }]}>
+      <TouchableOpacity
+        testID={testID}
+        activeOpacity={0.85}
+        onPressIn={() => { Animated.spring(scale, { toValue: 0.95, useNativeDriver: true, friction: 5 }).start(); }}
+        onPressOut={() => { Animated.spring(scale, { toValue: 1, useNativeDriver: true, friction: 4 }).start(); }}
+        onPress={() => { fxTap(); onPress?.(); }}
+        style={styles.tile}
+      >
+        <Ionicons name={icon} size={28} color={theme.colors.gold} />
+        <Text style={styles.tileLabel}>{label}</Text>
+      </TouchableOpacity>
+    </Animated.View>
   );
 }
 

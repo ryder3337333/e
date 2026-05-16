@@ -238,8 +238,32 @@ test_plan:
   test_all: false
   test_priority: "high_first"
 
+  - task: "Replay AI: video upload + thumbnail extraction"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/replay.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "Added expo-image-picker + expo-video-thumbnails. Users pick a VIDEO clip → thumbnail is auto-extracted at 25% and sent as base64 to existing /api/replay/analyze multimodal endpoint. Also supports screenshot picking. Smoke tested via UI: PICK VIDEO and PICK SCREENSHOT buttons render correctly."
+
+  - task: "Haptics + sound effects + animations (UX polish)"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/utils/fx.ts"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "Created /app/frontend/src/utils/fx.ts (haptics + WebAudio beeps for web) and /app/frontend/src/utils/anim.ts (entrance fade, pulse, count-up). Wired into: Home (kill/death buttons + tile spring press), More (tile animations + tap fx), Accuracy (hit/miss), Reaction (tap pad differentiates idle/wait/go/success), Challenges (accept/decline/winner), Replay (pick/analyze)."
+
 agent_communication:
   - agent: "main"
-    message: "Added Clans, 1v1 Challenge, and Find Duo backend endpoints. Frontend screens are built and wired into the More tab. Please run backend tests on the three new task groups. Use POST /api/auth/signup to create test accounts (test_credentials.md has details). For challenges/clans tests, create at least 2 accounts so cross-user actions work."
+    message: "All UX polish complete: video upload to Replay AI via thumbnail extraction, haptics on mobile + audio beeps on web, spring-press tiles, entrance animations across the app."
   - agent: "testing"
     message: "Ran /app/backend_test.py against live backend with 3 fresh signups (A/B/C). 38/38 backend checks passed across Clans (18), Challenges (12), Find Duo (8). Verified: leader auto-assignment, duplicate name/tag and in-clan create rejection (400), leader-leave promotion + last-member disband, opponent-only accept/decline (403 otherwise), winner_id participant validation (400), notification dispatch to opponent on challenge create, duo upsert/overwrite, ?region= filter, /duo/mine + DELETE flow. No 500s observed. Note: passlib bcrypt 'AttributeError: __about__' warning in backend logs is benign (trapped) — signup/login work fine."

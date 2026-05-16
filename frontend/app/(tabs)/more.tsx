@@ -1,8 +1,12 @@
+import { useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ImageBackground } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '@/src/theme';
+import { fxTap } from '@/src/utils/fx';
+import { useEntranceFade } from '@/src/utils/anim';
+import { Animated } from 'react-native';
 
 type Tool = {
   key: string;
@@ -45,20 +49,8 @@ export default function More() {
           </View>
 
           <View style={styles.grid}>
-            {TOOLS.map((t) => (
-              <TouchableOpacity
-                key={t.key}
-                testID={t.testID}
-                activeOpacity={0.8}
-                onPress={() => router.push(t.route as any)}
-                style={[styles.tile, { borderTopColor: t.accent }]}
-              >
-                <View style={[styles.iconWrap, { backgroundColor: t.accent }]}>
-                  <Ionicons name={t.icon} size={26} color="#0a0a0a" />
-                </View>
-                <Text style={styles.tileLabel}>{t.label}</Text>
-                <Text style={styles.tileSub}>{t.sub}</Text>
-              </TouchableOpacity>
+            {TOOLS.map((t, idx) => (
+              <ToolTile key={t.key} tool={t} delay={idx * 50} onPress={() => router.push(t.route as any)} />
             ))}
           </View>
 
@@ -69,6 +61,35 @@ export default function More() {
         </ScrollView>
       </ImageBackground>
     </SafeAreaView>
+  );
+}
+
+function ToolTile({ tool, onPress, delay }: { tool: Tool; onPress: () => void; delay: number }) {
+  const ent = useEntranceFade(delay);
+  const scale = useRef(new Animated.Value(1)).current;
+  return (
+    <Animated.View
+      style={[
+        { width: '48%' },
+        ent.style,
+        { transform: [...(ent.style.transform || []), { scale }] },
+      ]}
+    >
+      <TouchableOpacity
+        testID={tool.testID}
+        activeOpacity={0.85}
+        onPressIn={() => Animated.spring(scale, { toValue: 0.95, useNativeDriver: true, friction: 5 }).start()}
+        onPressOut={() => Animated.spring(scale, { toValue: 1, useNativeDriver: true, friction: 4 }).start()}
+        onPress={() => { fxTap(); onPress(); }}
+        style={[styles.tile, { borderTopColor: tool.accent }]}
+      >
+        <View style={[styles.iconWrap, { backgroundColor: tool.accent }]}>
+          <Ionicons name={tool.icon} size={26} color="#0a0a0a" />
+        </View>
+        <Text style={styles.tileLabel}>{tool.label}</Text>
+        <Text style={styles.tileSub}>{tool.sub}</Text>
+      </TouchableOpacity>
+    </Animated.View>
   );
 }
 
