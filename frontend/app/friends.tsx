@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '@/src/theme';
+import { HomeButton } from '@/src/components/HomeButton';
 import { api } from '@/src/api';
 
 type Row = { user_id: string; username: string; elo: number; kdr: number };
@@ -45,7 +46,7 @@ export default function Friends() {
       <Stack.Screen options={{ title: 'FRIENDS',
         headerStyle: { backgroundColor: theme.colors.dirtDark },
         headerTitleStyle: { color: theme.colors.gold, fontFamily: theme.font, fontSize: 16 },
-        headerTintColor: theme.colors.gold }} />
+        headerTintColor: theme.colors.gold, headerRight: () => <HomeButton /> }} />
       <ImageBackground source={{ uri: theme.media.stone }} resizeMode="repeat" style={styles.bg} imageStyle={{ opacity: 0.15 }}>
         <View style={styles.searchBar}>
           <TextInput testID="search-input" value={q} onChangeText={setQ} placeholder="SEARCH USERNAME..."

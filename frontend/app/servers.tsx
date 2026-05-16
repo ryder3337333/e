@@ -5,6 +5,7 @@ import { Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { theme } from '@/src/theme';
+import { HomeButton } from '@/src/components/HomeButton';
 import { api } from '@/src/api';
 
 type Server = { id: string; name: string; ip: string; region: string; players: number; max: number; modes: string[]; version: string };
@@ -32,7 +33,7 @@ export default function Servers() {
       <Stack.Screen options={{ title: 'SERVER FINDER',
         headerStyle: { backgroundColor: theme.colors.dirtDark },
         headerTitleStyle: { color: theme.colors.gold, fontFamily: theme.font, fontSize: 16 },
-        headerTintColor: theme.colors.gold }} />
+        headerTintColor: theme.colors.gold, headerRight: () => <HomeButton /> }} />
       <ImageBackground source={{ uri: theme.media.stone }} resizeMode="repeat" style={styles.bg} imageStyle={{ opacity: 0.15 }}>
         <View style={styles.tabs}>
           {REGIONS.map((r) => (

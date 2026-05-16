@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '@/src/theme';
+import { HomeButton } from '@/src/components/HomeButton';
 
 // Smash damage formula (Mojang 1.21):
 // base = 6 (mace base) + density*0.5*fall  +  fallBonus(fall)
@@ -54,6 +55,7 @@ export default function DPSCalc() {
         headerStyle: { backgroundColor: theme.colors.dirtDark },
         headerTitleStyle: { color: theme.colors.gold, fontFamily: theme.font, fontSize: 16 },
         headerTintColor: theme.colors.gold,
+        headerRight: () => <HomeButton />,
       }} />
       <ImageBackground source={{ uri: theme.media.stone }} resizeMode="repeat" style={styles.bg} imageStyle={{ opacity: 0.15 }}>
         <ScrollView contentContainerStyle={styles.content}>

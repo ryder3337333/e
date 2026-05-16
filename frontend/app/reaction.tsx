@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, ImageBackground } from 'react
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack } from 'expo-router';
 import { theme } from '@/src/theme';
+import { HomeButton } from '@/src/components/HomeButton';
 
 type Phase = 'idle' | 'waiting' | 'go' | 'done' | 'tooEarly';
 
@@ -62,7 +63,7 @@ export default function Reaction() {
       <Stack.Screen options={{ title: 'REACTION TEST',
         headerStyle: { backgroundColor: theme.colors.dirtDark },
         headerTitleStyle: { color: theme.colors.gold, fontFamily: theme.font, fontSize: 16 },
-        headerTintColor: theme.colors.gold }} />
+        headerTintColor: theme.colors.gold, headerRight: () => <HomeButton /> }} />
       <ImageBackground source={{ uri: theme.media.stone }} resizeMode="repeat" style={styles.bg} imageStyle={{ opacity: 0.15 }}>
         <View style={styles.wrap}>
           <Text style={styles.heading}>REACT WHEN SCREEN TURNS GREEN</Text>

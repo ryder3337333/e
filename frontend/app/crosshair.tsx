@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ImageBackground, 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack } from 'expo-router';
 import { theme } from '@/src/theme';
+import { HomeButton } from '@/src/components/HomeButton';
 import { storage } from '@/src/utils/storage';
 
 const COLORS = ['#ffffff', '#55ff55', '#55ffff', '#ffaa00', '#ff5555', '#ff55ff', '#fcfc54'];
@@ -87,7 +88,7 @@ export default function Crosshair() {
       <Stack.Screen options={{ title: 'CROSSHAIR MAKER',
         headerStyle: { backgroundColor: theme.colors.dirtDark },
         headerTitleStyle: { color: theme.colors.gold, fontFamily: theme.font, fontSize: 16 },
-        headerTintColor: theme.colors.gold }} />
+        headerTintColor: theme.colors.gold, headerRight: () => <HomeButton /> }} />
       <ImageBackground source={{ uri: theme.media.stone }} resizeMode="repeat" style={styles.bg} imageStyle={{ opacity: 0.15 }}>
         <ScrollView contentContainerStyle={{ padding: theme.spacing.md, paddingBottom: 40 }}>
           <View style={styles.previewWrap}><Preview /></View>

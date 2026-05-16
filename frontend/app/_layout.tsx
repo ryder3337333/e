@@ -42,6 +42,16 @@ export default function RootLayout() {
             <Stack.Screen name="dps" options={{ headerShown: true }} />
             <Stack.Screen name="leaderboard" options={{ headerShown: true }} />
             <Stack.Screen name="notifications" options={{ headerShown: true }} />
+            <Stack.Screen name="tips" options={{ headerShown: true }} />
+            <Stack.Screen name="reaction" options={{ headerShown: true }} />
+            <Stack.Screen name="crosshair" options={{ headerShown: true }} />
+            <Stack.Screen name="servers" options={{ headerShown: true }} />
+            <Stack.Screen name="friends" options={{ headerShown: true }} />
+            <Stack.Screen name="replay" options={{ headerShown: true }} />
+            <Stack.Screen name="accuracy" options={{ headerShown: true }} />
+            <Stack.Screen name="clans" options={{ headerShown: true }} />
+            <Stack.Screen name="challenges" options={{ headerShown: true }} />
+            <Stack.Screen name="duo" options={{ headerShown: true }} />
           </Stack>
         </Gate>
       </AuthProvider>

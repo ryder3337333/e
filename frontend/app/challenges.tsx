@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '@/src/theme';
+import { HomeButton } from '@/src/components/HomeButton';
 import { api } from '@/src/api';
 import { useAuth } from '@/src/auth';
 
@@ -69,7 +70,7 @@ export default function Challenges() {
       <Stack.Screen options={{ title: '1V1 CHALLENGES',
         headerStyle: { backgroundColor: theme.colors.dirtDark },
         headerTitleStyle: { color: theme.colors.gold, fontFamily: theme.font, fontSize: 16 },
-        headerTintColor: theme.colors.gold }} />
+        headerTintColor: theme.colors.gold, headerRight: () => <HomeButton /> }} />
       <ImageBackground source={{ uri: theme.media.stone }} resizeMode="repeat" style={styles.bg} imageStyle={{ opacity: 0.15 }}>
         <View style={styles.topBar}>
           {(['incoming', 'outgoing'] as const).map((t) => (

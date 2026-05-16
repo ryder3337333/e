@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, FlatList, ImageBackground, RefreshControl } fro
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack } from 'expo-router';
 import { theme } from '@/src/theme';
+import { HomeButton } from '@/src/components/HomeButton';
 import { api } from '@/src/api';
 import { useAuth } from '@/src/auth';
 
@@ -28,6 +29,7 @@ export default function Leaderboard() {
         headerStyle: { backgroundColor: theme.colors.dirtDark },
         headerTitleStyle: { color: theme.colors.gold, fontFamily: theme.font, fontSize: 16 },
         headerTintColor: theme.colors.gold,
+        headerRight: () => <HomeButton />,
       }} />
       <ImageBackground source={{ uri: theme.media.stone }} resizeMode="repeat" style={styles.bg} imageStyle={{ opacity: 0.15 }}>
         <Text style={styles.sectionTitle}>WEEKLY TOP 50 (BY K/D)</Text>
