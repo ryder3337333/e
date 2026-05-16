@@ -193,6 +193,10 @@ class StatsSummary(BaseModel):
     deaths: int
     kdr: float
     streak: int
+    hits: int = 0
+    misses: int = 0
+    accuracy: float = 0.0
+    elo: int = 1000
 
 
 class Notification(BaseModel):
@@ -419,8 +423,8 @@ async def delete_loadout(loadout_id: str, user=Depends(get_current_user)):
 # ---------- Stats ----------
 @api_router.post("/stats/log", response_model=StatsSummary)
 async def log_stat(payload: StatLogCreate, user=Depends(get_current_user)):
-    if payload.kind not in ("kill", "death"):
-        raise HTTPException(status_code=400, detail="kind must be kill or death")
+    if payload.kind not in ("kill", "death", "hit", "miss"):
+        raise HTTPException(status_code=400, detail="kind must be kill|death|hit|miss")
     await db.stat_events.insert_one({
         "id": str(uuid.uuid4()),
         "user_id": user["id"],
@@ -444,17 +448,30 @@ async def reset_stats(user=Depends(get_current_user)):
 async def _summary(uid: str) -> StatsSummary:
     events = await db.stat_events.find(
         {"user_id": uid}, {"_id": 0}
-    ).sort("created_at", 1).to_list(5000)
+    ).sort("created_at", 1).to_list(20000)
     kills = sum(1 for e in events if e["kind"] == "kill")
     deaths = sum(1 for e in events if e["kind"] == "death")
+    hits = sum(1 for e in events if e["kind"] == "hit")
+    misses = sum(1 for e in events if e["kind"] == "miss")
     kdr = round(kills / deaths, 2) if deaths > 0 else float(kills)
     streak = 0
     for e in reversed(events):
-        if e["kind"] == "kill":
-            streak += 1
-        else:
-            break
-    return StatsSummary(kills=kills, deaths=deaths, kdr=kdr, streak=streak)
+        if e["kind"] in ("kill", "death"):
+            if e["kind"] == "kill":
+                streak += 1
+            else:
+                break
+    accuracy = round(hits / (hits + misses), 3) if (hits + misses) > 0 else 0.0
+    elo = compute_elo(kills, deaths, hits, misses)
+    return StatsSummary(kills=kills, deaths=deaths, kdr=kdr, streak=streak,
+                        hits=hits, misses=misses, accuracy=accuracy, elo=elo)
+
+
+def compute_elo(kills: int, deaths: int, hits: int, misses: int) -> int:
+    base = 1000
+    kdr = kills / deaths if deaths > 0 else float(kills)
+    acc = hits / (hits + misses) if (hits + misses) > 0 else 0.0
+    return int(base + 30 * kdr + 2 * kills + 200 * acc)
 
 
 # ---------- Notifications ----------
@@ -502,6 +519,172 @@ async def weekly_leaderboard():
                               kills=r["kills"], deaths=r["deaths"], kdr=kdr))
     rows.sort(key=lambda x: (x.kdr, x.kills), reverse=True)
     return rows[:50]
+
+
+# ---------- Tips Feed ----------
+TIPS = [
+    {"id": "t1", "category": "mechanic", "title": "Smash Damage Stacking", "body": "Density V adds +0.5 damage per fall block. From 20 blocks that's +50 raw damage BEFORE armor calc. Pair with Strength I (+3) and you one-shot full Netherite."},
+    {"id": "t2", "category": "movement", "title": "Wind Burst Escape", "body": "Wind Burst III launches you 4-5 blocks up. Use it to escape pearls or to chain smash attacks mid-air without ender pearls."},
+    {"id": "t3", "category": "counter", "title": "Anti-Crystal", "body": "Place crystals around YOUR feet, not theirs. Mace players need height — deny them takeoff space with crystal walls."},
+    {"id": "t4", "category": "movement", "title": "Bedrock Sky Stalker", "body": "Bedrock players: keep a stack of cobwebs. Cobweb above a player + mace smash = guaranteed kill, they can't escape the slow-fall."},
+    {"id": "t5", "category": "loadout", "title": "Totem Stack", "body": "Always run two Totems (offhand swap macro). Density mace + 2 totems gives you 3 second-chances per fight."},
+    {"id": "t6", "category": "mechanic", "title": "Crit Threshold", "body": "12+ blocks of fall guarantees a critical hit. Sprint-jump from a 10-block tower = +50% damage minimum."},
+    {"id": "t7", "category": "counter", "title": "Shield Mace Trade", "body": "Java only: shield ABSORBS the smash. Bait their slam, shield-up at the last frame, then counter-axe their shield to disable it."},
+    {"id": "t8", "category": "movement", "title": "Pearl-Slam Combo", "body": "Pearl 30 blocks up, immediately mace-smash. The pearl height-bonus + mace damage = instant kill on any unarmored target."},
+    {"id": "t9", "category": "loadout", "title": "Feather Falling Math", "body": "FF IV reduces fall damage 48%. Stack with Mace Smash Attack (negates ALL fall) — combine them for safe high-altitude slams."},
+    {"id": "t10", "category": "mechanic", "title": "Breach + Density", "body": "Breach IV strips 60% of armor effectiveness. Combined with Density V, you can ignore Netherite — your raw damage punches through."},
+    {"id": "t11", "category": "counter", "title": "Anchor Cancel", "body": "Place a respawn anchor below YOUR feet. If mace player slams you, the anchor blast launches them up — counter-smash incoming."},
+    {"id": "t12", "category": "movement", "title": "Elytra Mace Dive", "body": "Elytra-launch high, then disengage chestplate slot for mace mid-air. Dive-bomb playstyle that's nearly unmatched."},
+]
+
+
+@api_router.get("/tips")
+async def list_tips(category: Optional[str] = None):
+    out = [t for t in TIPS if not category or t["category"] == category]
+    return out
+
+
+@api_router.get("/tips/daily")
+async def daily_tip():
+    # Deterministic daily rotation
+    day_idx = (datetime.now(timezone.utc) - datetime(2025, 1, 1, tzinfo=timezone.utc)).days
+    return TIPS[day_idx % len(TIPS)]
+
+
+# ---------- Friends ----------
+class FriendRow(BaseModel):
+    user_id: str
+    username: str
+    elo: int
+    kdr: float
+
+
+@api_router.get("/users/search", response_model=List[FriendRow])
+async def search_users(q: str, user=Depends(get_current_user)):
+    if len(q.strip()) < 2:
+        return []
+    q_low = q.lower()
+    docs = await db.users.find(
+        {"username_lower": {"$regex": f"^{q_low}"}, "id": {"$ne": user["id"]}},
+        {"_id": 0, "password_hash": 0}
+    ).limit(20).to_list(20)
+    out = []
+    for u in docs:
+        s = await _summary(u["id"])
+        out.append(FriendRow(user_id=u["id"], username=u["username"], elo=s.elo, kdr=s.kdr))
+    return out
+
+
+@api_router.post("/friends/{friend_id}")
+async def add_friend(friend_id: str, user=Depends(get_current_user)):
+    if friend_id == user["id"]:
+        raise HTTPException(status_code=400, detail="Cannot friend yourself")
+    target = await db.users.find_one({"id": friend_id}, {"_id": 0})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    await db.friends.update_one(
+        {"follower_id": user["id"], "followee_id": friend_id},
+        {"$setOnInsert": {"follower_id": user["id"], "followee_id": friend_id, "created_at": now_iso()}},
+        upsert=True,
+    )
+    return {"ok": True}
+
+
+@api_router.delete("/friends/{friend_id}")
+async def remove_friend(friend_id: str, user=Depends(get_current_user)):
+    await db.friends.delete_one({"follower_id": user["id"], "followee_id": friend_id})
+    return {"ok": True}
+
+
+@api_router.get("/friends", response_model=List[FriendRow])
+async def list_friends(user=Depends(get_current_user)):
+    edges = await db.friends.find({"follower_id": user["id"]}, {"_id": 0}).to_list(500)
+    out = []
+    for e in edges:
+        u = await db.users.find_one({"id": e["followee_id"]}, {"_id": 0, "password_hash": 0})
+        if not u:
+            continue
+        s = await _summary(u["id"])
+        out.append(FriendRow(user_id=u["id"], username=u["username"], elo=s.elo, kdr=s.kdr))
+    out.sort(key=lambda r: r.elo, reverse=True)
+    return out
+
+
+# ---------- Server Finder ----------
+SERVERS = [
+    {"id": "s1", "name": "MaceMC", "ip": "play.macemc.net", "region": "NA", "players": 1284, "max": 2000, "modes": ["FFA", "Duels", "Ranked"], "version": "1.21.4"},
+    {"id": "s2", "name": "Hypixel", "ip": "mc.hypixel.net", "region": "GLOBAL", "players": 42800, "max": 100000, "modes": ["Skywars", "Duels"], "version": "1.21.4"},
+    {"id": "s3", "name": "PvPLand", "ip": "pvpland.net", "region": "EU", "players": 952, "max": 1500, "modes": ["Mace 1v1", "Sumo", "Ranked"], "version": "1.21.4"},
+    {"id": "s4", "name": "MinemenClub", "ip": "minemen.club", "region": "EU/NA", "players": 1810, "max": 3000, "modes": ["Practice", "Ranked Mace"], "version": "1.21.4"},
+    {"id": "s5", "name": "BedwarsPractice", "ip": "bwp.gg", "region": "NA", "players": 640, "max": 1200, "modes": ["Mace Box", "MLG"], "version": "1.21.4"},
+    {"id": "s6", "name": "GommeHD", "ip": "gommehd.net", "region": "EU", "players": 2100, "max": 5000, "modes": ["FFA", "1v1"], "version": "1.21.4"},
+    {"id": "s7", "name": "SaicoPvP", "ip": "saicopvp.com", "region": "NA", "players": 470, "max": 1000, "modes": ["UHC Mace", "Ranked"], "version": "1.21.4"},
+    {"id": "s8", "name": "Loyisa", "ip": "play.loyisa.com", "region": "AS", "players": 1320, "max": 2000, "modes": ["Practice", "Mace Box"], "version": "1.21.4"},
+]
+
+
+@api_router.get("/servers")
+async def list_servers():
+    return SERVERS
+
+
+# ---------- Replay Analyzer ----------
+class ReplayReq(BaseModel):
+    image_base64: Optional[str] = None
+    description: str
+    server: Optional[str] = None
+
+
+@api_router.post("/replay/analyze")
+async def replay_analyze(req: ReplayReq, user=Depends(get_current_user)):
+    if not EMERGENT_LLM_KEY:
+        raise HTTPException(status_code=500, detail="LLM key not configured")
+    if not req.description.strip() and not req.image_base64:
+        raise HTTPException(status_code=400, detail="Provide an image or description")
+
+    prompt = (
+        "You are MaceCoach Pro, analyzing a Minecraft 1.21+ Mace PvP clip. "
+        "Give a critique in this exact structure:\n"
+        "### What Went Right\n- bullet 1\n- bullet 2\n"
+        "### What Went Wrong\n- bullet 1\n- bullet 2\n"
+        "### How to Improve\n- bullet 1\n- bullet 2\n"
+        "Be specific about mace mechanics (Density stacking, Wind Burst, fall heights, totem timing). "
+        "Keep total response under 220 words. Use Java/Bedrock-aware advice."
+    )
+    user_input = f"Server: {req.server or 'unknown'}\nClip description: {req.description.strip()}"
+
+    try:
+        chat = LlmChat(api_key=EMERGENT_LLM_KEY, session_id=f"replay_{user['id']}_{uuid.uuid4()}", system_message=prompt)
+        chat = chat.with_model("anthropic", "claude-sonnet-4-5-20250929")
+        if req.image_base64:
+            # Attach image as content via multimodal
+            msg = UserMessage(text=user_input, file_contents=[{"mime_type": "image/png", "data": req.image_base64}])
+        else:
+            msg = UserMessage(text=user_input)
+        reply = await chat.send_message(msg)
+        analysis = str(reply or "")
+    except Exception as e:
+        logging.exception("Replay LLM error")
+        raise HTTPException(status_code=502, detail=f"LLM error: {e}")
+
+    record = {
+        "id": str(uuid.uuid4()),
+        "user_id": user["id"],
+        "description": req.description[:500],
+        "server": req.server,
+        "analysis": analysis,
+        "created_at": now_iso(),
+    }
+    await db.replay_analyses.insert_one(record)
+    return {"id": record["id"], "analysis": analysis, "created_at": record["created_at"]}
+
+
+@api_router.get("/replay/history")
+async def replay_history(user=Depends(get_current_user)):
+    docs = await db.replay_analyses.find(
+        {"user_id": user["id"]}, {"_id": 0}
+    ).sort("created_at", -1).limit(20).to_list(20)
+    return docs
 
 
 app.include_router(api_router)

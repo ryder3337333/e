@@ -77,6 +77,14 @@ export default function TabsLayout() {
           tabBarButtonTestID: 'tab-chat',
         }}
       />
+      <Tabs.Screen
+        name="more"
+        options={{
+          title: 'More',
+          tabBarIcon: ({ color, size }) => <Ionicons name="apps" size={size} color={color} />,
+          tabBarButtonTestID: 'tab-more',
+        }}
+      />
     </Tabs>
   );
 }

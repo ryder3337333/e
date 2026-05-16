@@ -100,12 +100,12 @@ export default function Home() {
 
           <Text style={styles.sectionHeader}>QUICK ACCESS</Text>
           <View style={styles.grid}>
-            <Tile icon="book" label="GUIDE" testID="tile-guide" onPress={() => router.push('/guide')} />
-            <Tile icon="hammer" label="LOADOUTS" testID="tile-loadout" onPress={() => router.push('/loadout')} />
+            <Tile icon="flame" label="PVP TIPS" testID="tile-tips" onPress={() => router.push('/tips')} />
+            <Tile icon="locate" label="HIT ACCURACY" testID="tile-accuracy" onPress={() => router.push('/accuracy')} />
             <Tile icon="calculator" label="DPS CALC" testID="tile-dps" onPress={() => router.push('/dps')} />
             <Tile icon="trophy" label="LEADERBOARD" testID="tile-leaderboard" onPress={() => router.push('/leaderboard')} />
-            <Tile icon="chatbubbles" label="FORUM" testID="tile-forum" onPress={() => router.push('/forum')} />
-            <Tile icon="sparkles" label="AI COACH" testID="tile-chat" onPress={() => router.push('/chat')} />
+            <Tile icon="flash" label="REACTION" testID="tile-reaction" onPress={() => router.push('/reaction')} />
+            <Tile icon="film" label="REPLAY AI" testID="tile-replay" onPress={() => router.push('/replay')} />
           </View>
 
           <View style={styles.tipCard} testID="daily-tip">

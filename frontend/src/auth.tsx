@@ -62,11 +62,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(res.user);
   };
 
-  const logout = async () => {
-    await storage.removeItem(TOKEN_KEY);
-    setUser(null);
-  };
-
   return (
     <Ctx.Provider value={{ user, loading, signup, login, logout, refresh }}>
       {children}
