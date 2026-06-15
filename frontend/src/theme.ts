@@ -24,6 +24,8 @@ export const theme = {
   },
   spacing: { xs: 4, sm: 8, md: 16, lg: 24, xl: 32 },
   font: Platform.select({ ios: 'Menlo', android: 'monospace', default: 'monospace' }) as string,
+  fontPixel: 'PressStart2P_400Regular',
+  fontBody: 'VT323_400Regular',
   media: {
     stone: 'https://static.prod-images.emergentagent.com/jobs/810b6ffd-8ec2-40e5-b61e-9d229caff012/images/c718a33bd6ff5b948dadae9c441d484f27f67fd14f92548db958dc865565fa5c.png',
     dirtGrass: 'https://static.prod-images.emergentagent.com/jobs/810b6ffd-8ec2-40e5-b61e-9d229caff012/images/467b78ce41c3731a50284db211dd109714f1cbbc29b527c53a403e658647e4b9.png',

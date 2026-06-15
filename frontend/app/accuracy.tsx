@@ -11,6 +11,8 @@ import { HomeButton } from '@/src/components/HomeButton';
 import { api } from '@/src/api';
 import { fxHit, fxMiss } from '@/src/utils/fx';
 import { useEntranceFade } from '@/src/utils/anim';
+import { checkAchievements } from '@/src/utils/achievementHooks';
+import { useAchievements } from '@/src/achievements';
 
 type Summary = {
   kills: number; deaths: number; kdr: number; streak: number;
@@ -18,6 +20,7 @@ type Summary = {
 };
 
 export default function Accuracy() {
+  const { show: showAchievement } = useAchievements();
   const [s, setS] = useState<Summary | null>(null);
   const [busy, setBusy] = useState(false);
   const [sessionHits, setSessionHits] = useState(0);
@@ -36,6 +39,7 @@ export default function Accuracy() {
       setS(r);
       if (kind === 'hit') setSessionHits((n) => n + 1);
       else setSessionMisses((n) => n + 1);
+      checkAchievements().then((newly) => { if (newly.length) showAchievement(newly); }).catch(() => {});
     } catch (e: any) { Alert.alert('Error', e?.message || 'Failed'); }
     setBusy(false);
   };

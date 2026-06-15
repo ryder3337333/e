@@ -1022,6 +1022,253 @@ async def my_duo(user=Depends(get_current_user)):
 
 app.include_router(api_router)
 
+
+# ---------- Achievements ----------
+ACHIEVEMENT_CATALOG = [
+    {"code": "first_blood",    "name": "First Blood",          "description": "Log your first kill.",                     "icon": "skull",          "tier": "bronze",   "target": 1},
+    {"code": "killer_streak5", "name": "Hot Streak",            "description": "Reach a 5-kill streak.",                   "icon": "flame",          "tier": "silver",   "target": 5},
+    {"code": "killer_streak10","name": "Unstoppable",          "description": "Reach a 10-kill streak.",                  "icon": "flame",          "tier": "gold",     "target": 10},
+    {"code": "kills_100",      "name": "Centurion",             "description": "Rack up 100 total kills.",                 "icon": "trophy",         "tier": "gold",     "target": 100},
+    {"code": "kills_1000",     "name": "Mace Legend",           "description": "Rack up 1000 total kills.",                "icon": "trophy",         "tier": "netherite","target": 1000},
+    {"code": "deadeye",        "name": "Deadeye",               "description": "Hit accuracy \u2265 80% (min 20 swings).",     "icon": "locate",         "tier": "diamond",  "target": 80},
+    {"code": "sharpshooter",   "name": "Sharpshooter",          "description": "Hit accuracy \u2265 60% (min 10 swings).",     "icon": "locate",         "tier": "silver",   "target": 60},
+    {"code": "coach_apprentice","name": "Coach\u2019s Apprentice", "description": "Send your first AI Coach question.",       "icon": "sparkles",       "tier": "bronze",   "target": 1},
+    {"code": "coach_devotee",  "name": "Coach\u2019s Devotee",     "description": "Send 50 AI Coach messages.",               "icon": "sparkles",       "tier": "gold",     "target": 50},
+    {"code": "forum_voice",    "name": "Voice of the Forum",    "description": "Create your first forum post.",            "icon": "chatbubbles",    "tier": "bronze",   "target": 1},
+    {"code": "forum_legend",   "name": "Forum Legend",          "description": "Create 25 forum posts.",                   "icon": "chatbubbles",    "tier": "silver",   "target": 25},
+    {"code": "clan_founder",   "name": "Clan Founder",          "description": "Found a clan and lead it.",                "icon": "shield",         "tier": "gold",     "target": 1},
+    {"code": "challenger",     "name": "Challenger",            "description": "Send your first 1v1 challenge.",           "icon": "flash",          "tier": "bronze",   "target": 1},
+    {"code": "champion",       "name": "Champion",              "description": "Win 10 1v1 challenges.",                   "icon": "ribbon",         "tier": "gold",     "target": 10},
+    {"code": "replay_student", "name": "Tape Study",            "description": "Submit your first replay for AI critique.","icon": "film",           "tier": "bronze",   "target": 1},
+    {"code": "quickdraw",      "name": "Quickdraw",             "description": "Reaction time under 250ms (logged).",      "icon": "speedometer",    "tier": "diamond",  "target": 1},
+    {"code": "duo_seeker",     "name": "Duo Seeker",            "description": "Post your first LFG request.",             "icon": "people-circle",  "tier": "bronze",   "target": 1},
+]
+ACHIEVEMENT_BY_CODE = {a["code"]: a for a in ACHIEVEMENT_CATALOG}
+
+
+async def _get_progress(uid: str) -> dict:
+    doc = await db.achievements.find_one({"user_id": uid}, {"_id": 0})
+    if not doc:
+        doc = {"user_id": uid, "unlocked": [], "progress": {}}
+    return doc
+
+
+async def _save_progress(uid: str, doc: dict):
+    await db.achievements.update_one({"user_id": uid}, {"$set": doc}, upsert=True)
+
+
+async def _evaluate_unlocks(uid: str) -> List[dict]:
+    """Evaluate all achievements for user; return list of newly-unlocked catalog entries."""
+    doc = await _get_progress(uid)
+    unlocked: set = set(doc.get("unlocked", []))
+    progress: dict = dict(doc.get("progress", {}))
+    newly: List[dict] = []
+
+    summary = await _summary(uid)
+    # Update progress snapshots
+    progress["kills"] = summary.kills
+    progress["streak"] = summary.streak
+    progress["hits"] = summary.hits
+    progress["acc"] = int(summary.accuracy * 100)
+    total_swings = summary.hits + summary.misses
+    progress["swings"] = total_swings
+
+    forum_count = await db.forum_posts.count_documents({"author_id": uid})
+    progress["forum_posts"] = forum_count
+
+    chat_msgs = await db.chat_messages.count_documents({"user_id": uid, "role": "user"})
+    progress["chat_msgs"] = chat_msgs
+
+    challenges_sent = await db.challenges.count_documents({"challenger_id": uid})
+    progress["challenges_sent"] = challenges_sent
+    wins = await db.challenges.count_documents({"winner_id": uid, "status": "completed"})
+    progress["wins"] = wins
+
+    clans_led = await db.clans.count_documents({"leader_id": uid})
+    progress["clans_led"] = clans_led
+
+    replays = await db.replay_analyses.count_documents({"user_id": uid})
+    progress["replays"] = replays
+
+    duo_posts = await db.duo_queue.count_documents({"user_id": uid})
+    progress["duo_posts"] = duo_posts
+
+    # Rules
+    rules = {
+        "first_blood":     summary.kills >= 1,
+        "killer_streak5":  summary.streak >= 5,
+        "killer_streak10": summary.streak >= 10,
+        "kills_100":       summary.kills >= 100,
+        "kills_1000":      summary.kills >= 1000,
+        "sharpshooter":    total_swings >= 10 and summary.accuracy >= 0.60,
+        "deadeye":         total_swings >= 20 and summary.accuracy >= 0.80,
+        "coach_apprentice": chat_msgs >= 1,
+        "coach_devotee":   chat_msgs >= 50,
+        "forum_voice":     forum_count >= 1,
+        "forum_legend":    forum_count >= 25,
+        "clan_founder":    clans_led >= 1,
+        "challenger":      challenges_sent >= 1,
+        "champion":        wins >= 10,
+        "replay_student":  replays >= 1,
+        "duo_seeker":      duo_posts >= 1,
+    }
+
+    for code, ok in rules.items():
+        if ok and code not in unlocked:
+            unlocked.add(code)
+            entry = dict(ACHIEVEMENT_BY_CODE[code])
+            entry["unlocked"] = True
+            entry["unlocked_at"] = now_iso()
+            newly.append(entry)
+
+    # Persist
+    doc["unlocked"] = sorted(unlocked)
+    doc["progress"] = progress
+    doc["user_id"] = uid
+    if "unlocked_at" not in doc:
+        doc["unlocked_at"] = {}
+    for entry in newly:
+        doc["unlocked_at"][entry["code"]] = entry["unlocked_at"]
+    await _save_progress(uid, doc)
+    return newly
+
+
+@api_router.post("/achievements/check")
+async def check_achievements(user=Depends(get_current_user)):
+    """Run after any action that may unlock achievements; returns newly unlocked."""
+    newly = await _evaluate_unlocks(user["id"])
+    return newly
+
+
+@api_router.post("/achievements/quickdraw")
+async def log_quickdraw(payload: dict, user=Depends(get_current_user)):
+    """Special trigger: pass {ms: <number>} after a reaction-test attempt."""
+    ms = int(payload.get("ms", 9999))
+    if ms < 250:
+        doc = await _get_progress(user["id"])
+        unlocked = set(doc.get("unlocked", []))
+        if "quickdraw" not in unlocked:
+            unlocked.add("quickdraw")
+            doc["user_id"] = user["id"]
+            doc["unlocked"] = sorted(unlocked)
+            doc.setdefault("unlocked_at", {})["quickdraw"] = now_iso()
+            doc.setdefault("progress", {})["best_reaction_ms"] = ms
+            await _save_progress(user["id"], doc)
+            entry = dict(ACHIEVEMENT_BY_CODE["quickdraw"])
+            entry["unlocked"] = True
+            entry["unlocked_at"] = doc["unlocked_at"]["quickdraw"]
+            return [entry]
+    return []
+
+
+@api_router.get("/achievements")
+async def list_achievements(user=Depends(get_current_user)):
+    doc = await _get_progress(user["id"])
+    unlocked = set(doc.get("unlocked", []))
+    unlocked_at = doc.get("unlocked_at", {}) or {}
+    progress = doc.get("progress", {}) or {}
+    out = []
+    for a in ACHIEVEMENT_CATALOG:
+        # Compute display progress
+        cur = 0
+        if a["code"] in {"first_blood", "kills_100", "kills_1000"}:
+            cur = progress.get("kills", 0)
+        elif a["code"] == "killer_streak5" or a["code"] == "killer_streak10":
+            cur = progress.get("streak", 0)
+        elif a["code"] == "sharpshooter" or a["code"] == "deadeye":
+            cur = progress.get("acc", 0)
+        elif a["code"] in {"coach_apprentice", "coach_devotee"}:
+            cur = progress.get("chat_msgs", 0)
+        elif a["code"] in {"forum_voice", "forum_legend"}:
+            cur = progress.get("forum_posts", 0)
+        elif a["code"] == "clan_founder":
+            cur = progress.get("clans_led", 0)
+        elif a["code"] == "challenger":
+            cur = progress.get("challenges_sent", 0)
+        elif a["code"] == "champion":
+            cur = progress.get("wins", 0)
+        elif a["code"] == "replay_student":
+            cur = progress.get("replays", 0)
+        elif a["code"] == "duo_seeker":
+            cur = progress.get("duo_posts", 0)
+        out.append({
+            **a,
+            "unlocked": a["code"] in unlocked,
+            "unlocked_at": unlocked_at.get(a["code"]),
+            "progress": cur,
+        })
+    return out
+
+
+# ---------- Reaction Test Leaderboard ----------
+class ReactionLog(BaseModel):
+    ms: int = Field(..., ge=50, le=5000)
+
+
+@api_router.post("/reaction/log")
+async def log_reaction(payload: ReactionLog, user=Depends(get_current_user)):
+    """Save best reaction time per user (only updates if new value is better)."""
+    existing = await db.reactions.find_one({"user_id": user["id"]}, {"_id": 0})
+    is_new_best = False
+    if not existing or payload.ms < existing.get("best_ms", 99999):
+        await db.reactions.update_one(
+            {"user_id": user["id"]},
+            {"$set": {
+                "user_id": user["id"],
+                "username": user["username"],
+                "best_ms": payload.ms,
+                "updated_at": now_iso(),
+            }},
+            upsert=True,
+        )
+        is_new_best = True
+    # Always increment attempts
+    await db.reactions.update_one(
+        {"user_id": user["id"]},
+        {"$inc": {"attempts": 1}},
+        upsert=True,
+    )
+    doc = await db.reactions.find_one({"user_id": user["id"]}, {"_id": 0})
+    return {
+        "is_new_best": is_new_best,
+        "best_ms": doc.get("best_ms"),
+        "attempts": doc.get("attempts", 1),
+    }
+
+
+@api_router.get("/reaction/leaderboard")
+async def reaction_leaderboard(limit: int = 25):
+    docs = await db.reactions.find({}, {"_id": 0}).sort("best_ms", 1).limit(limit).to_list(limit)
+    out = []
+    for i, d in enumerate(docs):
+        out.append({
+            "rank": i + 1,
+            "user_id": d.get("user_id"),
+            "username": d.get("username", "?"),
+            "best_ms": d.get("best_ms"),
+            "attempts": d.get("attempts", 0),
+            "updated_at": d.get("updated_at"),
+        })
+    return out
+
+
+@api_router.get("/reaction/mine")
+async def my_reaction(user=Depends(get_current_user)):
+    doc = await db.reactions.find_one({"user_id": user["id"]}, {"_id": 0})
+    if not doc:
+        return None
+    # Compute global rank
+    better = await db.reactions.count_documents({"best_ms": {"$lt": doc.get("best_ms", 99999)}})
+    return {
+        "best_ms": doc.get("best_ms"),
+        "attempts": doc.get("attempts", 0),
+        "rank": better + 1,
+    }
+
+
+# Re-register router so new routes get attached.
+app.include_router(api_router)
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,

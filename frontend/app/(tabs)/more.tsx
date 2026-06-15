@@ -31,6 +31,7 @@ const TOOLS: Tool[] = [
   { key: 'clans',     icon: 'shield',         label: 'CLANS',            sub: 'Found or join a clan',       route: '/clans',        accent: theme.colors.diamond,  testID: 'more-clans' },
   { key: 'challenge', icon: 'flash-outline',  label: '1V1 CHALLENGE',    sub: 'Throw down the gauntlet',    route: '/challenges',   accent: theme.colors.redstone, testID: 'more-challenges' },
   { key: 'duo',       icon: 'people-circle',  label: 'FIND DUO',         sub: 'Match with players',         route: '/duo',          accent: theme.colors.emerald,  testID: 'more-duo' },
+  { key: 'achieve',   icon: 'ribbon',         label: 'ACHIEVEMENTS',     sub: 'Trophy hall',                route: '/achievements', accent: theme.colors.gold,     testID: 'more-achievements' },
   { key: 'notif',     icon: 'notifications',  label: 'NOTIFICATIONS',    sub: 'Inbox & alerts',             route: '/notifications',accent: theme.colors.redstone, testID: 'more-notif' },
 ];
 

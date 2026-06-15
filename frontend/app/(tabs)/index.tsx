@@ -11,12 +11,15 @@ import { api } from '@/src/api';
 import { useAuth } from '@/src/auth';
 import { fxTap, fxHit, fxMiss, fxNotify } from '@/src/utils/fx';
 import { useEntranceFade, usePulse } from '@/src/utils/anim';
+import { checkAchievements } from '@/src/utils/achievementHooks';
+import { useAchievements } from '@/src/achievements';
 
 type Stats = { kills: number; deaths: number; kdr: number; streak: number };
 
 export default function Home() {
   const router = useRouter();
   const { user, logout } = useAuth();
+  const { show: showAchievement } = useAchievements();
   const [stats, setStats] = useState<Stats>({ kills: 0, deaths: 0, kdr: 0, streak: 0 });
   const [unread, setUnread] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -41,6 +44,7 @@ export default function Home() {
     try {
       const s = await api<Stats>('/stats/log', { method: 'POST', body: { kind } });
       setStats(s);
+      checkAchievements().then((newly) => { if (newly.length) showAchievement(newly); }).catch(() => {});
     } catch (e: any) { Alert.alert('Error', e?.message || 'Failed'); }
     setLoading(false);
   };
