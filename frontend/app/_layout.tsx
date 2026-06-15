@@ -83,6 +83,7 @@ export default function RootLayout() {
               <Stack.Screen name="challenges" options={{ headerShown: true }} />
               <Stack.Screen name="duo" options={{ headerShown: true }} />
               <Stack.Screen name="achievements" options={{ headerShown: true }} />
+              <Stack.Screen name="admin" options={{ headerShown: true }} />
             </Stack>
           </Gate>
           <AchievementToast />

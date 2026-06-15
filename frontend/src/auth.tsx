@@ -2,7 +2,15 @@ import React, { createContext, useContext, useEffect, useState, useCallback } fr
 import { storage } from './utils/storage';
 import { api, TOKEN_KEY } from './api';
 
-export type User = { id: string; email: string; username: string; created_at: string };
+export type User = {
+  id: string;
+  email: string;
+  username: string;
+  created_at: string;
+  is_admin?: boolean;
+  is_banned?: boolean;
+  muted_until?: string | null;
+};
 
 type AuthCtx = {
   user: User | null;

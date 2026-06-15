@@ -59,6 +59,40 @@ async def get_current_user(authorization: Optional[str] = Header(None)):
     user = await db.users.find_one({"id": uid}, {"_id": 0, "password_hash": 0})
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
+    if user.get("is_banned"):
+        raise HTTPException(status_code=403, detail="Account banned")
+    # Inject computed admin flag
+    user["is_admin"] = user.get("username", "").lower() in ADMIN_USERNAMES
+    return user
+
+
+# ---------- Moderation ----------
+ADMIN_USERNAMES = {"rydersworld", "greenboottap"}  # case-insensitive
+
+
+def is_admin_user(u: dict) -> bool:
+    return u.get("username", "").lower() in ADMIN_USERNAMES
+
+
+async def require_admin(user=Depends(get_current_user)):
+    if not is_admin_user(user):
+        raise HTTPException(status_code=403, detail="Admin only")
+    return user
+
+
+async def require_not_muted(user=Depends(get_current_user)):
+    """Use for content-creation endpoints (forum posts, comments, chat etc.)."""
+    if is_admin_user(user):
+        return user
+    mu = user.get("muted_until")
+    if mu:
+        try:
+            until = datetime.fromisoformat(mu)
+            if until > datetime.now(timezone.utc):
+                left = int((until - datetime.now(timezone.utc)).total_seconds())
+                raise HTTPException(status_code=403, detail=f"You are muted ({left}s remaining)")
+        except ValueError:
+            pass
     return user
 
 
@@ -108,6 +142,9 @@ class UserPublic(BaseModel):
     email: EmailStr
     username: str
     created_at: str
+    is_admin: bool = False
+    is_banned: bool = False
+    muted_until: Optional[str] = None
 
 
 class AuthResponse(BaseModel):
@@ -277,18 +314,30 @@ async def login(req: LoginReq):
     if not user or not pwd_ctx.verify(req.password, user["password_hash"]):
         record_failure(key)
         raise HTTPException(status_code=401, detail="Invalid email or password")
+    if user.get("is_banned"):
+        raise HTTPException(status_code=403, detail="This account has been banned.")
 
     clear_attempts(key)
     token = create_token(user["id"])
     return AuthResponse(
         token=token,
-        user=UserPublic(id=user["id"], email=user["email"], username=user["username"], created_at=user["created_at"]),
+        user=UserPublic(
+            id=user["id"], email=user["email"], username=user["username"], created_at=user["created_at"],
+            is_admin=user["username"].lower() in ADMIN_USERNAMES,
+            is_banned=bool(user.get("is_banned")),
+            muted_until=user.get("muted_until"),
+        ),
     )
 
 
 @api_router.get("/auth/me", response_model=UserPublic)
 async def me(user=Depends(get_current_user)):
-    return UserPublic(id=user["id"], email=user["email"], username=user["username"], created_at=user["created_at"])
+    return UserPublic(
+        id=user["id"], email=user["email"], username=user["username"], created_at=user["created_at"],
+        is_admin=user.get("is_admin", False),
+        is_banned=bool(user.get("is_banned")),
+        muted_until=user.get("muted_until"),
+    )
 
 
 # ---------- Chat ----------
@@ -346,7 +395,7 @@ async def list_posts():
 
 
 @api_router.post("/forum/posts", response_model=ForumPost)
-async def create_post(payload: ForumPostCreate, user=Depends(get_current_user)):
+async def create_post(payload: ForumPostCreate, user=Depends(require_not_muted)):
     post = ForumPost(
         user_id=user["id"], author=user["username"],
         title=payload.title, body=payload.body,
@@ -378,7 +427,7 @@ async def list_comments(post_id: str):
 
 
 @api_router.post("/forum/posts/{post_id}/comments", response_model=Comment)
-async def add_comment(post_id: str, payload: CommentCreateReq, user=Depends(get_current_user)):
+async def add_comment(post_id: str, payload: CommentCreateReq, user=Depends(require_not_muted)):
     post = await db.forum_posts.find_one({"id": post_id}, {"_id": 0})
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
@@ -1267,6 +1316,107 @@ async def my_reaction(user=Depends(get_current_user)):
 
 
 # Re-register router so new routes get attached.
+app.include_router(api_router)
+
+
+# ---------- Admin / Moderation endpoints ----------
+class ModerationReq(BaseModel):
+    username: str
+
+
+class MuteReq(BaseModel):
+    username: str
+    minutes: Optional[int] = None  # None = permanent mute
+
+
+@api_router.get("/admin/me")
+async def admin_me(user=Depends(get_current_user)):
+    return {"is_admin": is_admin_user(user), "username": user.get("username")}
+
+
+@api_router.get("/admin/users")
+async def admin_list_users(admin=Depends(require_admin), q: Optional[str] = None, limit: int = 50):
+    query: dict = {}
+    if q:
+        query["username_lower"] = {"$regex": q.lower()}
+    docs = await db.users.find(query, {"_id": 0, "password_hash": 0}).limit(limit).to_list(limit)
+    out = []
+    for d in docs:
+        out.append({
+            "id": d.get("id"),
+            "username": d.get("username"),
+            "email": d.get("email"),
+            "is_banned": bool(d.get("is_banned")),
+            "muted_until": d.get("muted_until"),
+            "is_admin": d.get("username", "").lower() in ADMIN_USERNAMES,
+            "created_at": d.get("created_at"),
+        })
+    return out
+
+
+@api_router.post("/admin/ban")
+async def admin_ban(payload: ModerationReq, admin=Depends(require_admin)):
+    target = await db.users.find_one({"username_lower": payload.username.lower()}, {"_id": 0})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    if target.get("username", "").lower() in ADMIN_USERNAMES:
+        raise HTTPException(status_code=400, detail="Cannot ban another admin")
+    await db.users.update_one({"id": target["id"]}, {"$set": {"is_banned": True, "banned_by": admin["username"], "banned_at": now_iso()}})
+    return {"ok": True, "username": target["username"], "banned": True}
+
+
+@api_router.post("/admin/unban")
+async def admin_unban(payload: ModerationReq, admin=Depends(require_admin)):
+    target = await db.users.find_one({"username_lower": payload.username.lower()}, {"_id": 0})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    await db.users.update_one({"id": target["id"]}, {"$unset": {"is_banned": "", "banned_by": "", "banned_at": ""}})
+    return {"ok": True, "username": target["username"], "banned": False}
+
+
+@api_router.post("/admin/mute")
+async def admin_mute(payload: MuteReq, admin=Depends(require_admin)):
+    target = await db.users.find_one({"username_lower": payload.username.lower()}, {"_id": 0})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    if target.get("username", "").lower() in ADMIN_USERNAMES:
+        raise HTTPException(status_code=400, detail="Cannot mute another admin")
+    if payload.minutes is None or payload.minutes <= 0:
+        until = (datetime.now(timezone.utc) + timedelta(days=3650)).isoformat()
+        scope = "permanent"
+    else:
+        until = (datetime.now(timezone.utc) + timedelta(minutes=payload.minutes)).isoformat()
+        scope = f"{payload.minutes}min"
+    await db.users.update_one({"id": target["id"]}, {"$set": {"muted_until": until, "muted_by": admin["username"]}})
+    return {"ok": True, "username": target["username"], "muted_until": until, "scope": scope}
+
+
+@api_router.post("/admin/unmute")
+async def admin_unmute(payload: ModerationReq, admin=Depends(require_admin)):
+    target = await db.users.find_one({"username_lower": payload.username.lower()}, {"_id": 0})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    await db.users.update_one({"id": target["id"]}, {"$unset": {"muted_until": "", "muted_by": ""}})
+    return {"ok": True, "username": target["username"], "muted": False}
+
+
+@api_router.delete("/admin/forum/posts/{post_id}")
+async def admin_delete_post(post_id: str, admin=Depends(require_admin)):
+    res = await db.forum_posts.delete_one({"id": post_id})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Post not found")
+    await db.forum_comments.delete_many({"post_id": post_id})
+    return {"ok": True, "deleted": post_id}
+
+
+@api_router.delete("/admin/forum/comments/{comment_id}")
+async def admin_delete_comment(comment_id: str, admin=Depends(require_admin)):
+    res = await db.forum_comments.delete_one({"id": comment_id})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    return {"ok": True, "deleted": comment_id}
+
+
 app.include_router(api_router)
 
 app.add_middleware(

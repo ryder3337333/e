@@ -7,11 +7,16 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '@/src/theme';
 import { api } from '@/src/api';
+import { useAuth } from '@/src/auth';
+import { fxTap, fxSuccess, fxError } from '@/src/utils/fx';
+
+const ADMIN_NAMES = new Set(['rydersworld', 'greenboottap']);
 
 type Post = { id: string; user_id: string; author: string; title: string; body: string; media_url?: string | null; media_type?: string | null; likes: number; comments_count: number; created_at: string };
 type Comment = { id: string; author: string; text: string; created_at: string };
 
 export default function ForumScreen() {
+  const { user } = useAuth();
   const [posts, setPosts] = useState<Post[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [composerOpen, setComposerOpen] = useState(false);
@@ -46,11 +51,37 @@ export default function ForumScreen() {
   };
 
   const like = async (id: string) => {
+    fxTap();
     try {
       const updated = await api<Post>(`/forum/posts/${id}/like`, { method: 'POST', body: {} });
       setPosts((p) => p.map((x) => (x.id === id ? updated : x)));
       if (openPost?.id === id) setOpenPost(updated);
     } catch (e) { console.warn(e); }
+  };
+
+  const adminDeletePost = async (id: string) => {
+    fxTap();
+    Alert.alert('Delete post?', 'This permanently removes the post + all comments.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'DELETE', style: 'destructive', onPress: async () => {
+        try {
+          await api(`/admin/forum/posts/${id}`, { method: 'DELETE' });
+          fxSuccess();
+          setPosts((arr) => arr.filter((p) => p.id !== id));
+          if (openPost?.id === id) setOpenPost(null);
+        } catch (e: any) { fxError(); Alert.alert('Error', e?.message || 'Failed'); }
+      } },
+    ]);
+  };
+
+  const adminDeleteComment = async (cid: string) => {
+    fxTap();
+    try {
+      await api(`/admin/forum/comments/${cid}`, { method: 'DELETE' });
+      fxSuccess();
+      setComments((arr) => arr.filter((c) => c.id !== cid));
+    } catch (e: any) { fxError(); Alert.alert('Error', e?.message || 'Failed'); }
+  };
   };
 
   const openThread = async (p: Post) => {
@@ -91,10 +122,20 @@ export default function ForumScreen() {
           refreshing={refreshing}
           onRefresh={fetchPosts}
           ListEmptyComponent={<Text style={styles.empty}>No posts yet — be first to share a strat.</Text>}
-          renderItem={({ item }) => (
+          renderItem={({ item }) => {
+            const authorIsAdmin = ADMIN_NAMES.has(item.author.toLowerCase());
+            return (
             <TouchableOpacity testID={`post-${item.id}`} activeOpacity={0.7} onPress={() => openThread(item)} style={styles.postCard}>
               <Text style={styles.postTitle} numberOfLines={2}>{item.title}</Text>
-              <Text style={styles.postAuthor}>BY {item.author.toUpperCase()}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={styles.postAuthor}>BY {item.author.toUpperCase()}</Text>
+                {authorIsAdmin && (
+                  <View style={styles.adminBadge}>
+                    <Ionicons name="shield-checkmark" size={9} color="#000" />
+                    <Text style={styles.adminBadgeTxt}>ADMIN</Text>
+                  </View>
+                )}
+              </View>
               {item.media_type === 'image' && item.media_url ? (
                 <Image source={{ uri: item.media_url }} style={styles.postImage} resizeMode="cover" />
               ) : null}
@@ -114,9 +155,16 @@ export default function ForumScreen() {
                   <Ionicons name="chatbubble" size={16} color={theme.colors.diamond} />
                   <Text style={styles.iconText}>{item.comments_count}</Text>
                 </View>
+                {user?.is_admin && (
+                  <TouchableOpacity testID={`mod-delete-${item.id}`} onPress={(e: any) => { e?.stopPropagation?.(); adminDeletePost(item.id); }} style={[styles.iconBtn, { marginLeft: 'auto', backgroundColor: theme.colors.redstone, borderColor: '#9b1c1c', borderWidth: 2, paddingHorizontal: 8, paddingVertical: 4 }]}>
+                    <Ionicons name="trash" size={13} color="#fff" />
+                    <Text style={[styles.iconText, { color: '#fff' }]}>MOD DELETE</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             </TouchableOpacity>
-          )}
+            );
+          }}
         />
 
         <Modal visible={composerOpen} transparent animationType="slide" onRequestClose={() => setComposerOpen(false)}>
@@ -214,6 +262,8 @@ const styles = StyleSheet.create({
   postCard: { backgroundColor: theme.colors.stoneDark, borderColor: theme.colors.borderDark, borderWidth: 4, padding: theme.spacing.md, marginBottom: theme.spacing.sm },
   postTitle: { fontFamily: theme.font, fontSize: 16, color: theme.colors.gold, fontWeight: 'bold', textTransform: 'uppercase', marginBottom: 4 },
   postAuthor: { fontFamily: theme.font, fontSize: 10, color: theme.colors.diamond, marginBottom: 8 },
+  adminBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: theme.colors.gold, borderColor: '#000', borderWidth: 1, paddingHorizontal: 5, paddingVertical: 2, marginBottom: 8 },
+  adminBadgeTxt: { fontFamily: theme.font, fontSize: 9, color: '#000', fontWeight: 'bold', letterSpacing: 1 },
   postImage: { width: '100%', height: 180, marginBottom: 8, borderWidth: 2, borderColor: theme.colors.borderDark },
   videoTag: { flexDirection: 'row', alignSelf: 'flex-start', alignItems: 'center', gap: 4, backgroundColor: theme.colors.redstone, paddingHorizontal: 8, paddingVertical: 4, marginBottom: 8 },
   videoTagText: { fontFamily: theme.font, fontSize: 10, color: '#fff', fontWeight: 'bold' },

@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '@/src/theme';
+import { useAuth } from '@/src/auth';
 import { fxTap } from '@/src/utils/fx';
 import { useEntranceFade } from '@/src/utils/anim';
 import { Animated } from 'react-native';
@@ -37,20 +38,26 @@ const TOOLS: Tool[] = [
 
 export default function More() {
   const router = useRouter();
+  const { user } = useAuth();
+  const TOOLS_VISIBLE = user?.is_admin
+    ? [...TOOLS, { key: 'admin', icon: 'shield-checkmark' as const, label: 'ADMIN PANEL', sub: 'Ban, mute, moderate', route: '/admin', accent: theme.colors.redstone, testID: 'more-admin' }]
+    : TOOLS;
   return (
     <SafeAreaView style={styles.safe} edges={['left', 'right']} testID="more-screen">
       <ImageBackground source={{ uri: theme.media.stone }} resizeMode="repeat" style={styles.bg} imageStyle={{ opacity: 0.18 }}>
         <ScrollView contentContainerStyle={styles.container}>
           <View style={styles.header}>
-            <Ionicons name="apps" size={28} color={theme.colors.gold} />
+            <Ionicons name={user?.is_admin ? 'shield-checkmark' : 'apps'} size={28} color={user?.is_admin ? theme.colors.redstone : theme.colors.gold} />
             <View style={{ marginLeft: 12, flex: 1 }}>
               <Text style={styles.title}>TOOLS & FEATURES</Text>
-              <Text style={styles.subtitle}>Everything mace pvp — in one chest</Text>
+              <Text style={styles.subtitle}>
+                {user?.is_admin ? 'ADMIN — full moderation powers' : 'Everything mace pvp — in one chest'}
+              </Text>
             </View>
           </View>
 
           <View style={styles.grid}>
-            {TOOLS.map((t, idx) => (
+            {TOOLS_VISIBLE.map((t, idx) => (
               <ToolTile key={t.key} tool={t} delay={idx * 50} onPress={() => router.push(t.route as any)} />
             ))}
           </View>
