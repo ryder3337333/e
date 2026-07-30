@@ -82,7 +82,6 @@ export default function ForumScreen() {
       setComments((arr) => arr.filter((c) => c.id !== cid));
     } catch (e: any) { fxError(); Alert.alert('Error', e?.message || 'Failed'); }
   };
-  };
 
   const openThread = async (p: Post) => {
     setOpenPost(p);

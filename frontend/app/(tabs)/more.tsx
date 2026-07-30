@@ -1,13 +1,14 @@
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ImageBackground } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '@/src/theme';
 import { useAuth } from '@/src/auth';
 import { fxTap } from '@/src/utils/fx';
 import { useEntranceFade } from '@/src/utils/anim';
 import { Animated } from 'react-native';
+import { useCallback } from 'react';
 
 type Tool = {
   key: string;
